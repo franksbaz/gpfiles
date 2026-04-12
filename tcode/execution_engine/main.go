@@ -19,7 +19,6 @@ double calculate_call_price(double S, double K, double T, double r, double sigma
 import "C"
 import (
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"time"
@@ -57,6 +56,14 @@ func NewIBKRExecutor(initialBalance float64, compliance *ComplianceGuard) *IBKRE
 }
 
 func (e *IBKRExecutor) ExecuteOrder(ticker string, optType string, strike float64, expiry string, quantity int, midPrice float64) {
+	// In IBKR modes the internal simulator must not silently take over when the
+	// broker connection has failed.  Refuse and log clearly — no fallback.
+	if ActiveExecutionMode != ModeSimulation && IBKRConnFailed {
+		log.Printf("ORDER REFUSED: IBKR connection failed at startup — cannot execute in %s mode without broker. "+
+			"Restart with a working IBKR Gateway or set EXECUTION_MODE=SIMULATION.", ActiveExecutionMode)
+		return
+	}
+
 	direction := "BUY"
 	if quantity < 0 {
 		direction = "SELL"
@@ -129,26 +136,6 @@ func (e *IBKRExecutor) ExecuteOrder(ticker string, optType string, strike float6
 	TradeCount.Inc()
 }
 
-// DEAD CODE — not called from main(). Do not enable without replacing fake data.
-func PaperTradingLoop(executor *IBKRExecutor, pricing *PricingEngine) {
-	log.Println("PHASE 3: Paper Trading (IBKR) Simulation Active.")
-	for i := 0; i < 3; i++ {
-		conf := 0.75 + rand.Float64()*0.2
-		if conf > 0.8 {
-			ticker := "TSLA"
-			expiry := "2026-03-20"
-			strike := 210.0
-			price := pricing.CallPrice(200, strike, 0.08, 0.04, 0.50)
-			executor.ExecuteOrder(ticker, "CALL", strike, expiry, 1, price)
-			
-			time.Sleep(100 * time.Millisecond)
-			// Simulate immediate exit for testing PnL/Wash Sale
-			exitPrice := price * 1.05
-			executor.ExecuteOrder(ticker, "CALL", strike, expiry, -1, exitPrice)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
 
 
 func main() {
@@ -159,7 +146,10 @@ func main() {
 	}
 	log.SetOutput(logFile)
 
-	rand.Seed(time.Now().UnixNano())
+	// Resolve execution mode from EXECUTION_MODE env var (default: IBKR_PAPER).
+	initExecutionMode()
+	log.Printf("Execution mode: %s", ActiveExecutionMode)
+
 	pe := &PricingEngine{}
 	
 	// Setup Compliance Guard (Task C: PDT & Wash Sale)
@@ -203,6 +193,7 @@ func main() {
 	mux.HandleFunc("/api/metrics/vitals", configHandler.ServeVitals)
 	mux.HandleFunc("/api/metrics/latency", configHandler.ServeLatencyMetrics)
 	mux.HandleFunc("/api/metrics/signals/breakdown", configHandler.ServeSignalBreakdown)
+	mux.HandleFunc("/api/metrics/publisher", configHandler.ServePublisherMetrics)
 	mux.HandleFunc("/api/metrics/nats", configHandler.ServeNatsHealth)
 	mux.HandleFunc("/api/metrics/buildinfo", configHandler.ServeBuildInfo)
 	mux.HandleFunc("/api/metrics/goroutines", configHandler.ServeGoroutineProfile)
@@ -254,9 +245,19 @@ func main() {
 		}
 	}()
 
-	ibClient := NewIBKRClient("127.0.0.1", 7497, 1)
-	if err := ibClient.Connect(); err != nil {
-		log.Printf("Handshake Warning: %v (Simulated offline)", err)
+	// Connect to IBKR only in IBKR modes.  In SIMULATION mode the broker
+	// subsystem is not started and /api/account returns an explicit error.
+	if ActiveExecutionMode == ModeSimulation {
+		log.Printf("SIMULATION mode: IBKR subsystem not started. /api/account will return error.")
+	} else {
+		ibClient := NewIBKRClient("127.0.0.1", 7497, 1)
+		if err := ibClient.Connect(); err != nil {
+			IBKRConnFailed = true
+			log.Printf("[HALT] IBKR connection FAILED in %s mode: %v — new-trade submission is blocked. "+
+				"Fix IB Gateway connectivity or restart with EXECUTION_MODE=SIMULATION.", ActiveExecutionMode, err)
+		} else {
+			log.Printf("IBKR connection established for mode %s.", ActiveExecutionMode)
+		}
 	}
 
 	subscriber.Start()

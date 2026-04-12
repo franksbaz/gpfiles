@@ -44,17 +44,14 @@ function App() {
 
   const fetchHeaderData = async () => {
     try {
-        const [stateRes, acctRes, portRes] = await Promise.all([
-            fetch('/api/system/state'),
-            fetch('/api/account'),
-            fetch('/api/portfolio'),
-        ]);
-        const state = stateRes.ok ? await stateRes.json() : null;
-        const acct = acctRes.ok ? await acctRes.json() : null;
+        // /api/portfolio now returns the authoritative data for the active mode:
+        //   IBKR_PAPER / IBKR_LIVE → IBKR NAV overrides internal, source = execution mode
+        //   SIMULATION             → internal PaperPortfolio, source = "SIMULATION"
+        // No need to cross-check /api/account here; use portfolio directly.
+        const portRes = await fetch('/api/portfolio');
         const port = portRes.ok ? await portRes.json() : null;
-        setPortfolio(port ?? { positions: {} });
-        if (state?.mode === 'paper' && acct && !acct.error) {
-            setPortfolio({ nav: acct.net_liquidation, cash: acct.cash_balance, realized_pnl: acct.realized_pnl, positions: {} });
+        if (port && !port.error) {
+            setPortfolio(port);
         }
     } catch (e) { }
   };
@@ -142,23 +139,52 @@ function App() {
             {/* Integrity Status — three traffic lights */}
             <IntegrityStatus onStatusChange={handleIntegrityChange} />
 
-            {brokerStatus && (
-                <span
-                  data-testid="broker-mode-badge"
-                  aria-label={`Trading mode: ${brokerStatus.mode === 'live' ? 'LIVE TRADING' : brokerStatus.mode === 'paper' ? 'PAPER TRADING' : 'SIMULATION MODE'}`}
-                  style={{
-                    padding: '0.25rem 0.75rem',
-                    borderRadius: '4px',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    letterSpacing: '0.05em',
-                    backgroundColor: brokerStatus.mode === 'live' ? '#da3633' : brokerStatus.mode === 'paper' ? '#1f6feb' : '#9e6a03',
-                    color: 'white',
-                    border: `1px solid ${brokerStatus.mode === 'live' ? '#f85149' : brokerStatus.mode === 'paper' ? '#388bfd' : '#d29922'}`
-                }}>
-                    {brokerStatus.mode === 'live' ? '⚠ LIVE' : brokerStatus.mode === 'paper' ? 'PAPER' : 'SIM MODE'}
-                </span>
-            )}
+            {/* Execution mode banner — always visible, never hidden.
+                Maps the EXECUTION_MODE enum (IBKR_PAPER / IBKR_LIVE / SIMULATION)
+                to colour-coded labels with a disconnected warning overlay. */}
+            {(() => {
+              const mode = brokerStatus?.mode ?? 'LOADING';
+              const isLive = mode === 'IBKR_LIVE';
+              const isSim = mode === 'SIMULATION';
+              const isLoading = !brokerStatus;
+              const disconnected = brokerStatus && !brokerStatus.connected && !isSim;
+              const bg = isLive ? '#da3633' : isSim ? '#9e6a03' : isLoading ? '#30363d' : '#1a7f37';
+              const border = isLive ? '#f85149' : isSim ? '#d29922' : isLoading ? '#484f58' : '#3fb950';
+              const label = isLive ? '⚠ MODE: IBKR LIVE' : isSim ? 'MODE: SIMULATION' : isLoading ? 'MODE: …' : 'MODE: IBKR PAPER';
+              const tooltip = isLive
+                ? 'LIVE trading mode — real money. All orders execute against your live IBKR account.'
+                : isSim
+                ? 'Simulation mode — internal paper portfolio only. No broker connected.'
+                : isLoading
+                ? 'Loading execution mode…'
+                : 'IBKR paper trading mode — orders route to your IBKR paper account.';
+              return (
+                <Tooltip text={disconnected ? `${tooltip} ⚠ IBKR connection lost — trade submission blocked.` : tooltip}>
+                  <span
+                    data-testid="broker-mode-badge"
+                    aria-label={`Execution mode: ${mode}${disconnected ? ' — IBKR disconnected' : ''}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.3rem 0.9rem',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.07em',
+                      backgroundColor: bg,
+                      color: 'white',
+                      border: `2px solid ${border}`,
+                      boxShadow: isLive ? `0 0 8px ${border}66` : 'none',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {label}
+                    {disconnected && <span style={{ color: '#ffa657', fontWeight: 900, fontSize: '1em' }} aria-hidden="true">⚠</span>}
+                  </span>
+                </Tooltip>
+              );
+            })()}
             <Link to="/" aria-label="Go to Dashboard">
               <Tooltip text="Dashboard — main trading view">
                 <Home className="hamburger" aria-hidden="true" />

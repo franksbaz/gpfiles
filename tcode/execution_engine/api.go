@@ -205,13 +205,60 @@ func AddTradeLog(log TradeLog) {
 	}
 }
 
+// portfolioResponse is the shape returned by /api/portfolio.  It mirrors
+// PaperPortfolio but adds a Source field so callers always know which backend
+// is authoritative.
+type portfolioResponse struct {
+	NAV               float64             `json:"nav"`
+	Cash              float64             `json:"cash"`
+	RealizedPnL       float64             `json:"realized_pnl"`
+	MaintenanceMargin float64             `json:"maintenance_margin"`
+	Positions         map[string]Position `json:"positions"`
+	// Source is the active ExecutionMode: "IBKR_PAPER", "IBKR_LIVE", or "SIMULATION".
+	// /api/account returns the same Source value so both endpoints agree on which
+	// backend is authoritative.
+	Source string `json:"source"`
+}
+
 func (h *ConfigHandler) ServePortfolio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	h.Portfolio.mu.RLock()
-	defer h.Portfolio.mu.RUnlock()
-	json.NewEncoder(w).Encode(h.Portfolio)
+	resp := portfolioResponse{
+		NAV:               h.Portfolio.NAV,
+		Cash:              h.Portfolio.Cash,
+		RealizedPnL:       h.Portfolio.RealizedPnL,
+		MaintenanceMargin: h.Portfolio.MaintenanceMargin,
+		Positions:         h.Portfolio.Positions,
+		Source:            string(ActiveExecutionMode),
+	}
+	h.Portfolio.mu.RUnlock()
+
+	// In IBKR modes, override NAV/Cash with the most-recently-cached IBKR
+	// account values so /api/portfolio and /api/account agree on NAV.
+	// Positions detail is still from the internal fill tracker (which records
+	// every executed order) until Phase 3 full reconciliation.
+	if ActiveExecutionMode != ModeSimulation {
+		accountCacheMu.Lock()
+		cached := accountCache
+		accountCacheMu.Unlock()
+		if cached != nil {
+			if m, ok := cached.(map[string]interface{}); ok {
+				if nav, ok := m["net_liquidation"].(float64); ok && nav > 0 {
+					resp.NAV = nav
+				}
+				if cash, ok := m["cash_balance"].(float64); ok && cash > 0 {
+					resp.Cash = cash
+				}
+				if realized, ok := m["realized_pnl"].(float64); ok {
+					resp.RealizedPnL = realized
+				}
+			}
+		}
+	}
+
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (h *ConfigHandler) ServeTrades(w http.ResponseWriter, r *http.Request) {
@@ -476,6 +523,24 @@ func (h *ConfigHandler) ServeSignalMetrics(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(GlobalMetrics.SignalCounts)
 }
 
+// ServePublisherMetrics reads the publisher.py metrics file written after each
+// commission-rejected signal and returns a JSON object.  The file is written by
+// publisher.py to /tmp/publisher_metrics.json.
+func (h *ConfigHandler) ServePublisherMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	data, err := os.ReadFile("/tmp/publisher_metrics.json")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"signals_rejected_commission_total": 0,
+			"ts": nil,
+		})
+		return
+	}
+	w.Write(data)
+}
+
 func (h *ConfigHandler) ServeLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
@@ -663,9 +728,10 @@ func (h *ConfigHandler) ServeGoroutineProfile(w http.ResponseWriter, r *http.Req
 }
 
 type BrokerStatus struct {
-	Mode      string `json:"mode"`
+	Mode      string `json:"mode"`       // ExecutionMode value: IBKR_PAPER | IBKR_LIVE | SIMULATION
 	Broker    string `json:"broker"`
 	Confirmed bool   `json:"confirmed"`
+	Connected bool   `json:"connected"`  // false when IBKR connection failed at startup
 }
 
 type SystemState struct {
@@ -720,29 +786,25 @@ func (h *ConfigHandler) ServeSystemState(w http.ResponseWriter, r *http.Request)
 		maxDailyLoss = h.Guard.MaxDailyLoss
 	}
 
-	simModeMu.RLock()
-	currentMode := simMode
-	simModeMu.RUnlock()
-
 	json.NewEncoder(w).Encode(SystemState{
 		KillSwitch:           killSwitch,
 		SignalsBlockedReason: reason,
 		DailyPnL:             dailyPnL,
 		MaxDailyLoss:         maxDailyLoss,
-		Mode:                 currentMode,
+		Mode:                 string(ActiveExecutionMode),
 		ConvictionCount:      convCount,
 	})
 }
 
 func (h *ConfigHandler) ServeBrokerStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	simModeMu.RLock()
-	currentMode := simMode
-	simModeMu.RUnlock()
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	connected := ActiveExecutionMode == ModeSimulation || !IBKRConnFailed
 	status := BrokerStatus{
-		Mode:      currentMode,
+		Mode:      string(ActiveExecutionMode),
 		Broker:    "IBKR",
-		Confirmed: true,
+		Confirmed: connected,
+		Connected: connected,
 	}
 	json.NewEncoder(w).Encode(status)
 }
@@ -1385,10 +1447,25 @@ func (h *ConfigHandler) ServeAccount(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	// SIMULATION mode: no broker is connected — return a clear error rather than
+	// silently serving stale or empty IBKR data.
+	if ActiveExecutionMode == ModeSimulation {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":  "SIMULATION mode — no broker connected",
+			"mode":   string(ModeSimulation),
+			"source": string(ModeSimulation),
+		})
+		return
+	}
+
 	accountCacheMu.Lock()
 	if accountCache != nil && time.Since(accountCachedAt) < accountCacheTTL {
 		cached := accountCache
 		accountCacheMu.Unlock()
+		// Inject source field into cached result
+		if m, ok := cached.(map[string]interface{}); ok {
+			m["source"] = string(ActiveExecutionMode)
+		}
 		json.NewEncoder(w).Encode(cached)
 		return
 	}
@@ -1398,6 +1475,7 @@ func (h *ConfigHandler) ServeAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":            err.Error(),
+			"source":           string(ActiveExecutionMode),
 			"net_liquidation":  0,
 			"cash_balance":     0,
 			"buying_power":     0,
@@ -1406,6 +1484,11 @@ func (h *ConfigHandler) ServeAccount(w http.ResponseWriter, r *http.Request) {
 			"equity_with_loan": 0,
 		})
 		return
+	}
+
+	// Inject source field before caching and returning.
+	if m, ok := result.(map[string]interface{}); ok {
+		m["source"] = string(ActiveExecutionMode)
 	}
 
 	accountCacheMu.Lock()

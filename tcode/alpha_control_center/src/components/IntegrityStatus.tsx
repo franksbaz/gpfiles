@@ -26,6 +26,7 @@ interface IntegrityData {
     nav_checksum: string | null;
     mode: string;
     connected: boolean;
+    signals_rejected_commission: number;
   };
 }
 
@@ -255,9 +256,29 @@ const IntegrityPanel = ({ data, loading, onClose, openSection }: PanelProps) => 
                     <td>NAV Checksum</td>
                     <td style={{ fontFamily: 'monospace', fontSize: '11px' }}>{data.execution.nav_checksum || <span className="integrity-na">—</span>}</td>
                   </tr>
+                  <tr>
+                    <td>
+                      <span title="Signals suppressed in this session because round-trip IBKR commissions would exceed the profit at the take-profit price.">
+                        Signals Rejected (commission)
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        style={{ color: data.execution.signals_rejected_commission > 0 ? '#d29922' : '#3fb950', fontWeight: 700 }}
+                        title={`${data.execution.signals_rejected_commission} signal(s) suppressed — net profit at TP would be ≤ 0 after IBKR round-trip commissions`}
+                      >
+                        {data.execution.signals_rejected_commission}
+                      </span>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
               <p className="integrity-rule">Rule: in LIVE mode, broker must confirm connection and last fill. RED blocks new trades.</p>
+              {data.execution.signals_rejected_commission > 0 && (
+                <p className="integrity-rule" style={{ color: '#d29922' }}>
+                  ⚠ {data.execution.signals_rejected_commission} signal(s) suppressed this session — premium too low to cover IBKR round-trip commissions at the stated take-profit price.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -288,13 +309,15 @@ const IntegrityStatus = ({ onStatusChange }: IntegrityStatusProps) => {
       // Fetch audit and broker status — these are fast.
       // /api/fills is omitted here: it performs a live IBKR connection attempt that can
       // take 10+ s; last_fill_id is cosmetic and shown as "none" when unavailable.
-      const [auditRes, brokerRes] = await Promise.all([
+      const [auditRes, brokerRes, pubMetricsRes] = await Promise.all([
         fetch('/api/data/audit'),
         fetch('/api/broker/status'),
+        fetch('/api/metrics/publisher'),
       ]);
 
       const audit = auditRes.ok ? await auditRes.json().catch(() => null) : null;
       const broker = brokerRes.ok ? await brokerRes.json().catch(() => null) : null;
+      const pubMetrics = pubMetricsRes.ok ? await pubMetricsRes.json().catch(() => null) : null;
 
       const sv = audit?.spot_validation ?? {};
 
@@ -322,8 +345,9 @@ const IntegrityStatus = ({ onStatusChange }: IntegrityStatusProps) => {
           broker_confirmed: broker?.connected ?? false,
           last_fill_id: null,
           nav_checksum: navChecksum,
-          mode: broker?.mode ?? 'simulation',
+          mode: broker?.mode ?? 'SIMULATION',
           connected: broker?.connected ?? false,
+          signals_rejected_commission: pubMetrics?.signals_rejected_commission_total ?? 0,
         },
       };
 
