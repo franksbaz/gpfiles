@@ -18,10 +18,11 @@ const FORBIDDEN_PATTERNS: { pattern: RegExp; description: string }[] = [
   { pattern: /(?<![A-Za-z])--(?![A-Za-z>])/, description: '"--" (double dash as placeholder)' },
   { pattern: /\bN\/A\b/, description: '"N/A" (not-available placeholder)' },
   { pattern: /Loading\.\.\.|Loading…/, description: '"Loading..." or "Loading…" (loading text)' },
+  { pattern: /Fetching[…\.]{0,3}/i, description: '"Fetching…" or "Fetching" (fetching placeholder)' },
 ];
 
 test.describe('UX: No placeholder text in rendered page', () => {
-  test('page shows no "...", "--", "N/A", or "Loading..." after 3s', async ({ page }) => {
+  test('page shows no "...", "--", "N/A", "Loading...", or "Fetching..." after 3s', async ({ page }) => {
     await page.goto(BASE_URL, { waitUntil: 'load' });
     // Wait an additional 3s so async data has time to arrive or error
     await page.waitForTimeout(3000);

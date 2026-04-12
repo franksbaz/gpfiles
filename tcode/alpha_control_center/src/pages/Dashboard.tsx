@@ -743,11 +743,11 @@ const SignalModal = ({ signal, onClose }: { signal: Signal; onClose: () => void 
 
                     {/* Options Chain + Spot Audit buttons */}
                     <div className="prov-chain-row" style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn-view-chain" onClick={() => fetchChain()} disabled={chainLoading}>
-                            {chainLoading ? 'Fetching…' : '⟳ Options Chain'}
+                        <button className="btn-view-chain" onClick={() => fetchChain()} disabled={chainLoading} aria-busy={chainLoading}>
+                            ⟳ Options Chain
                         </button>
-                        <button className="btn-view-chain" onClick={() => fetchAudit(true)} disabled={auditLoading}>
-                            {auditLoading ? 'Fetching…' : '⟳ Spot Audit'}
+                        <button className="btn-view-chain" onClick={() => fetchAudit(true)} disabled={auditLoading} aria-busy={auditLoading}>
+                            ⟳ Spot Audit
                         </button>
                     </div>
 
@@ -1148,11 +1148,11 @@ const PortfolioBar = ({
                         <div
                             className="live-indicator"
                             data-tooltip={`Data last refreshed ${Math.floor(staleSec)}s ago. Over 10s is stale.`}
-                            aria-label={isFetching ? 'Fetching data' : isStale ? 'Data is stale' : 'Data is live'}
+                            aria-label={isStale ? 'Data is stale' : isFetching ? 'Refreshing data' : 'Data is live'}
                             role="status"
                         >
-                            <div className={`live-dot ${isFetching ? 'active' : isStale ? 'stale' : 'active'}`} aria-hidden="true" />
-                            <span>{isFetching ? 'Fetching…' : isStale ? 'Stale' : 'Live'}</span>
+                            <div className={`live-dot ${isStale ? 'stale' : 'active'}`} aria-hidden="true" />
+                            <span>{isStale ? 'Stale' : 'Live'}</span>
                         </div>
                     </Tooltip>
                 </div>
