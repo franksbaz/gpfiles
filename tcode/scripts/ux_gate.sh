@@ -55,11 +55,17 @@ if ! curl -sf --max-time 5 "$BASE_URL/api/status" > /dev/null 2>&1; then
     exit 0
 fi
 
-# Run Playwright tests
+# Run Playwright tests — all three UX gates must pass
 cd "$FRONTEND_DIR"
 PLAYWRIGHT_BASE_URL="$BASE_URL" \
     $PLAYWRIGHT_BIN test \
     --config=playwright.config.ts \
+    tests/ux_no_placeholders.spec.ts \
+    tests/ux_every_hoverable_tooltipped.spec.ts \
+    tests/ux_tooltip_no_clip.spec.ts \
+    tests/ux_tooltip_visibility.spec.ts \
+    tests/ux_integrity_gate.spec.ts \
+    tests/ux_performance.spec.ts \
     "${@}"
 
 STATUS=$?

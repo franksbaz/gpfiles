@@ -3,7 +3,7 @@ import './Dashboard.css';
 import Tooltip from '../components/Tooltip';
 import TradingViewWidget from '../components/TradingViewWidget';
 import SystemMonitor from '../components/SystemMonitor';
-import { SkeletonCard, SkeletonTable } from '../components/SkeletonLoader';
+import { SkeletonCard, SkeletonTable, SkeletonLine } from '../components/SkeletonLoader';
 
 // ============================================================
 //  Types
@@ -976,6 +976,9 @@ const DataProvenancePanel = ({ audit }: { audit: DataAudit | null }) => {
 const PortfolioBar = ({
     portfolio,
     account,
+    accountError,
+    accountLoading,
+    onRetryAccount,
     simMode,
     onSimToggle,
     onSimReset,
@@ -984,6 +987,9 @@ const PortfolioBar = ({
 }: {
     portfolio: Portfolio;
     account: AccountSummary | null;
+    accountError: string | null;
+    accountLoading: boolean;
+    onRetryAccount: () => void;
     simMode: string;
     onSimToggle: () => void;
     onSimReset: () => void;
@@ -1022,6 +1028,20 @@ const PortfolioBar = ({
                     onClose={() => setNavDrillOpen(false)}
                 />
             )}
+            {accountError && isPaper && (
+                <div className="ibkr-error-banner" role="alert" aria-live="polite">
+                    <span className="ibkr-error-icon">⚠</span>
+                    <span className="ibkr-error-msg">{accountError}</span>
+                    <button
+                        className="ibkr-retry-btn"
+                        onClick={onRetryAccount}
+                        aria-label="Retry IBKR connection"
+                        title="Retry connecting to IB Gateway"
+                    >
+                        Retry
+                    </button>
+                </div>
+            )}
             <div className="portfolio-bar" role="region" aria-label="Portfolio summary">
                 {/* Mode toggle pill */}
                 <Tooltip text="Toggle between Paper Trading (live IBKR paper account) and Simulation (local model)">
@@ -1055,7 +1075,7 @@ const PortfolioBar = ({
                             NET LIQ {isLiveAccount && <span className="ibkr-live-dot" />}
                             <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span>
                         </span>
-                        <span className="port-pill-value neutral">{netliq !== null ? formatUSD(netliq) : '...'}</span>
+                        <span className="port-pill-value neutral">{netliq !== null ? formatUSD(netliq) : <SkeletonLine width="72px" height="13px" />}</span>
                     </div>
                 </Tooltip>
                 <Tooltip text="Available cash balance — spendable funds excluding open position values">
@@ -1065,7 +1085,7 @@ const PortfolioBar = ({
                         aria-label={`Cash balance: ${cash !== null ? formatUSD(cash) : 'loading'}`}
                     >
                         <span className="port-pill-label">CASH <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
-                        <span className="port-pill-value">{cash !== null ? formatUSD(cash) : '...'}</span>
+                        <span className="port-pill-value">{cash !== null ? formatUSD(cash) : <SkeletonLine width="72px" height="13px" />}</span>
                     </div>
                 </Tooltip>
                 <Tooltip text="Buying power (4× cash for margin accounts)">
@@ -1086,7 +1106,7 @@ const PortfolioBar = ({
                     >
                         <span className="port-pill-label">UNREALIZED</span>
                         <span className={`port-pill-value ${unreal !== null && unreal >= 0 ? 'pos' : 'neg'}`}>
-                            {unreal !== null ? (unreal !== 0 ? (unreal > 0 ? '+' : '') + formatUSD(unreal) : '$0.00') : '...'}
+                            {unreal !== null ? (unreal !== 0 ? (unreal > 0 ? '+' : '') + formatUSD(unreal) : '$0.00') : <SkeletonLine width="72px" height="13px" />}
                         </span>
                     </div>
                 </Tooltip>
@@ -1098,7 +1118,7 @@ const PortfolioBar = ({
                     >
                         <span className="port-pill-label">REALIZED <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
                         <span className={`port-pill-value ${real !== null && real >= 0 ? 'pos' : 'neg'}`}>
-                            {real !== null ? formatUSD(real) : '...'}
+                            {real !== null ? formatUSD(real) : <SkeletonLine width="72px" height="13px" />}
                         </span>
                     </div>
                 </Tooltip>
@@ -1323,7 +1343,7 @@ const PositionModal = ({ pos, onClose }: { pos: IBKRPosition; onClose: () => voi
             <div className="signal-modal" onClick={e => e.stopPropagation()}>
                 <div className="signal-modal-header">
                     <span className="signal-modal-title">{label}</span>
-                    <button className="btn-modal-close" onClick={onClose}>×</button>
+                    <button className="btn-modal-close" onClick={onClose} aria-label="Close position detail">×</button>
                 </div>
                 <div className="modal-grid">
                     <div className="modal-row">
@@ -1389,6 +1409,8 @@ const PositionModal = ({ pos, onClose }: { pos: IBKRPosition; onClose: () => voi
                             target="_blank"
                             rel="noopener noreferrer"
                             className="ibkr-verify-link"
+                        aria-label="Verify this position on IBKR website (opens in new tab)"
+                        title="Verify this position on the IBKR portfolio page"
                         >
                             Verify on IBKR →
                         </a>
@@ -1483,6 +1505,10 @@ const TradingFloor = ({
                                     className={`position-card ${isProfit ? 'profit' : 'loss'} ${isFlip ? 'pnl-flip' : ''}`}
                                     onClick={() => setSelectedPos(pos)}
                                     style={{ cursor: 'pointer' }}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`${label} — ${pnl >= 0 ? '+' : ''}${formatUSD(pnl)} unrealized P&L. Click for drill-down.`}
+                                    onKeyDown={e => e.key === 'Enter' && setSelectedPos(pos)}
                                 >
                                     <div className="position-header">
                                         <Tooltip text={`${pos.ticker} ${pos.option_type || 'STOCK'} — click for full details`}>
@@ -1664,7 +1690,7 @@ const FillDrilldownModal = ({ trade, onClose }: { trade: Trade; onClose: () => v
                     <span className="modal-title">
                         📋 {trade.ticker} {trade.option_type || ''} {trade.strike ? `$${trade.strike}` : ''} — Trade Detail
                     </span>
-                    <button className="modal-close" onClick={onClose}>✕</button>
+                    <button className="modal-close" onClick={onClose} aria-label="Close trade detail">✕</button>
                 </div>
 
                 {loading ? (
@@ -1845,7 +1871,7 @@ const LossDetailModal = ({
                     <span className="modal-title">
                         📉 {ticker} {optType && `${optType} `}{strike ? `$${strike}` : ''}{expiry ? ` · ${expiry}` : ''} — Loss Analysis
                     </span>
-                    <button className="modal-close" onClick={onClose}>✕</button>
+                    <button className="modal-close" onClick={onClose} aria-label="Close loss analysis">✕</button>
                 </div>
                 <div className="loss-detail-body">
                     {/* P&L Banner */}
@@ -2007,7 +2033,16 @@ const LossSummaryWidget = ({ summary }: { summary: LossSummary | null }) => {
                 {losingTrades.length > 0 && (
                     <div className="loss-mini-list">
                         {losingTrades.slice(0, 5).map((lt, i) => (
-                            <div key={i} className="loss-mini-row" onClick={() => setSelectedLoss(lt)}>
+                            <div
+                                key={i}
+                                className="loss-mini-row"
+                                onClick={() => setSelectedLoss(lt)}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`${lt.ticker}${lt.strike ? ` $${lt.strike}` : ''} — ${formatUSD(lt.pnl)} loss. Click to analyze.`}
+                                title="Click to open loss analysis"
+                                onKeyDown={e => e.key === 'Enter' && setSelectedLoss(lt)}
+                            >
                                 <span style={{ color: '#8b949e', fontSize: '10px' }}>
                                     {lt.entry_ts ? new Date(lt.entry_ts).toLocaleDateString() : '—'}
                                 </span>
@@ -2311,7 +2346,17 @@ const ExecutionLog = ({ trades, fromLog, brokerStatus, lossSummary, simMode }: {
                         const hasPnl = t.pnl !== 0 && t.pnl !== undefined;
                         const pnlPos = (t.pnl ?? 0) >= 0;
                         return (
-                            <div key={i} className="trade-row" onClick={() => setDrillTrade(t)} style={{cursor:'pointer'}}>
+                            <div
+                                key={i}
+                                className="trade-row"
+                                onClick={() => setDrillTrade(t)}
+                                style={{cursor:'pointer'}}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`${t.action} ${t.ticker}${hasPnl ? ` — P&L ${formatUSD(t.pnl)}` : ''}. Click for trade detail.`}
+                                title="Click to open trade drill-down"
+                                onKeyDown={e => e.key === 'Enter' && setDrillTrade(t)}
+                            >
                                 <span className="trade-time">
                                     {new Date(t.time).toLocaleTimeString('en-US', {
                                         hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
@@ -2336,6 +2381,8 @@ const ExecutionLog = ({ trades, fromLog, brokerStatus, lossSummary, simMode }: {
                                     <button
                                         className="analyze-btn"
                                         onClick={e => { e.stopPropagation(); setAnalyzeTrade(t); }}
+                                        aria-label={`Analyze loss on ${t.ticker} — open loss reconstruction detail`}
+                                        title="Analyze this losing trade — view loss reconstruction, exit reason, and tagging"
                                     >ANALYZE</button>
                                 )}
                             </div>
@@ -2424,6 +2471,8 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
         unrealized_pnl: 0,
     });
     const [account, setAccount] = useState<AccountSummary | null>(null);
+    const [accountError, setAccountError] = useState<string | null>(null);
+    const [accountLoading, setAccountLoading] = useState(true);
     const [ibkrPositions, setIBKRPositions] = useState<IBKRPosition[]>([]);
     const [simMode, setSimMode] = useState<string>('paper');
     const [scorecard, setScorecard] = useState<ModelScorecard[]>([]);
@@ -2456,6 +2505,7 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
 
     // Fetch live IBKR account + positions (10s interval)
     const fetchAccount = useCallback(async () => {
+        setAccountLoading(true);
         try {
             const [acctRes, posRes] = await Promise.all([
                 fetch('/api/account'),
@@ -2463,13 +2513,24 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
             ]);
             if (acctRes.ok) {
                 const a = await acctRes.json() as AccountSummary;
-                if (!a.error) setAccount(a);
+                if (a.error) {
+                    setAccountError(a.error);
+                } else {
+                    setAccount(a);
+                    setAccountError(null);
+                }
+            } else {
+                setAccountError(`IBKR account endpoint returned ${acctRes.status} — last attempt ${new Date().toLocaleTimeString()}`);
             }
             if (posRes.ok) {
                 const p = await posRes.json() as IBKRPosition[];
                 setIBKRPositions(Array.isArray(p) ? p : []);
             }
-        } catch { /* ignore */ }
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            setAccountError(`IB Gateway not reachable — ${msg} — last attempt ${new Date().toLocaleTimeString()}`);
+        }
+        setAccountLoading(false);
     }, []);
 
     useEffect(() => {
@@ -2686,6 +2747,9 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
             <PortfolioBar
                 portfolio={portfolio}
                 account={account}
+                accountError={accountError}
+                accountLoading={accountLoading}
+                onRetryAccount={fetchAccount}
                 simMode={simMode}
                 onSimToggle={handleSimToggle}
                 onSimReset={handleSimReset}

@@ -1205,3 +1205,31 @@
     transition: background 0.15s;
 }
 .modal-close:hover { background: #21262d; color: #c9d1d9; }
+
+/* IBKR error banner */
+.ibkr-error-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3d1a1a;
+    border: 1px solid #f85149;
+    border-radius: 6px;
+    padding: 6px 12px;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    color: #ffa198;
+}
+.ibkr-error-icon { font-size: 0.9rem; flex-shrink: 0; }
+.ibkr-error-msg { flex: 1; font-family: 'Courier New', monospace; }
+.ibkr-retry-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #c9d1d9;
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 2px 10px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+.ibkr-retry-btn:hover { background: #30363d; }
