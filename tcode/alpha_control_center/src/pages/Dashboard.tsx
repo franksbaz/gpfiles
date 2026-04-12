@@ -3,6 +3,7 @@ import './Dashboard.css';
 import Tooltip from '../components/Tooltip';
 import TradingViewWidget from '../components/TradingViewWidget';
 import SystemMonitor from '../components/SystemMonitor';
+import { SkeletonCard, SkeletonTable } from '../components/SkeletonLoader';
 
 // ============================================================
 //  Types
@@ -37,6 +38,103 @@ interface BrokerStatus {
     mode: string;    // 'live' | 'paper' | 'simulation'
     connected: boolean;
 }
+
+// ============================================================
+//  NAV Drill-Down Modal
+// ============================================================
+interface NavDrillProps {
+    portfolio: Portfolio;
+    account: AccountSummary | null;
+    simMode: string;
+    onClose: () => void;
+}
+
+const NavDrillModal = ({ portfolio, account, simMode, onClose }: NavDrillProps) => {
+    const isPaper = simMode === 'paper';
+    const nav = isPaper ? (account?.net_liquidation ?? portfolio.nav) : portfolio.nav;
+    const cash = isPaper ? (account?.cash_balance ?? portfolio.cash) : portfolio.cash;
+    const unrealized = isPaper ? (account?.unrealized_pnl ?? portfolio.unrealized_pnl) : portfolio.unrealized_pnl;
+    const realized = isPaper ? (account?.realized_pnl ?? portfolio.realized_pnl) : portfolio.realized_pnl;
+    const posValues = Object.values(portfolio.positions ?? {}).map(p => ({
+        key: `${p.ticker}_${p.option_type}_${p.strike}`,
+        ticker: p.ticker,
+        marketValue: (p.current_price ?? 0) * (p.quantity ?? 0) * 100,
+        unrealizedPnl: p.unrealized_pnl ?? 0,
+    }));
+    const sumPosMV = posValues.reduce((s, p) => s + p.marketValue, 0);
+    const navSource = isPaper ? 'IBKR /api/account net_liquidation' : 'Sim portfolio /api/portfolio nav';
+    const ts = account?.ts ?? new Date().toISOString();
+
+    return (
+        <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="NAV Drill-Down">
+            <div className="modal-card nav-drill" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <span className="modal-title">📊 NAV DRILL-DOWN</span>
+                    <button className="modal-close" onClick={onClose} aria-label="Close NAV drill-down">✕</button>
+                </div>
+                <div className="fill-drill-body">
+                    <div className="fill-pnl-banner win">
+                        <span className="fill-pnl-label">NET LIQUIDATION</span>
+                        <span className="fill-pnl-value">{formatUSD(nav)}</span>
+                    </div>
+                    <div className="fill-section">
+                        <div className="fill-section-title">Composition</div>
+                        <div className="fill-grid">
+                            <div className="fill-row">
+                                <span>Cash</span>
+                                <span data-tooltip="Cash balance from broker account">{formatUSD(cash)}</span>
+                            </div>
+                            <div className="fill-row">
+                                <span>Open Position Market Values</span>
+                                <span data-tooltip="Sum of current_price × qty × 100 for all positions">{formatUSD(sumPosMV)}</span>
+                            </div>
+                            <div className="fill-row">
+                                <span>Unrealized P&L</span>
+                                <span style={{ color: (unrealized ?? 0) >= 0 ? '#3fb950' : '#f85149' }}
+                                      data-tooltip="Mark-to-market gain/loss on open positions">
+                                    {(unrealized ?? 0) >= 0 ? '+' : ''}{formatUSD(unrealized ?? 0)}
+                                </span>
+                            </div>
+                            <div className="fill-row">
+                                <span>Realized P&L (session)</span>
+                                <span style={{ color: (realized ?? 0) >= 0 ? '#3fb950' : '#f85149' }}
+                                      data-tooltip="Locked-in P&L from closed trades this session">
+                                    {(realized ?? 0) >= 0 ? '+' : ''}{formatUSD(realized ?? 0)}
+                                </span>
+                            </div>
+                            <div className="fill-row" style={{ borderTop: '1px solid #30363d', fontWeight: 700, paddingTop: '6px' }}>
+                                <span>= NAV</span>
+                                <span style={{ color: '#79c0ff' }}>{formatUSD(nav)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {posValues.length > 0 && (
+                        <div className="fill-section">
+                            <div className="fill-section-title">Position Market Values</div>
+                            <div className="fill-grid">
+                                {posValues.map(p => (
+                                    <div key={p.key} className="fill-row">
+                                        <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{p.ticker}</span>
+                                        <span data-tooltip="current_price × qty × 100">{formatUSD(p.marketValue)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    <div className="fill-section">
+                        <div className="fill-section-title">Data Provenance</div>
+                        <div className="fill-grid">
+                            <div className="fill-row"><span>Source</span><span style={{ fontSize: '11px' }}>{navSource}</span></div>
+                            <div className="fill-row"><span>Mode</span><span>{simMode.toUpperCase()}</span></div>
+                            <div className="fill-row"><span>Last Updated</span><span>{ts ? new Date(ts).toLocaleTimeString() : '—'}</span></div>
+                            <div className="fill-row"><span>Computation</span><span style={{ fontSize: '10px' }}>cash + Σ(position_market_values) + realized_pnl</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface SpotValidation {
     tv: number | null;
@@ -450,11 +548,11 @@ const SignalModal = ({ signal, onClose }: { signal: Signal; onClose: () => void 
             <div className="signal-modal" onClick={e => e.stopPropagation()}>
                 <div className="signal-modal-header">
                     <Tooltip text={contractExplanation(signal)}>
-                        <span className="signal-modal-title">
+                        <span className="signal-modal-title" data-tooltip={contractExplanation(signal)}>
                             {signal.is_spread ? contractName(signal) : `${signal.action} ${contractName(signal)}`}
                         </span>
                     </Tooltip>
-                    <button className="btn-modal-close" onClick={onClose}>×</button>
+                    <button className="btn-modal-close" onClick={onClose} aria-label="Close signal detail modal">×</button>
                 </div>
 
                 {/* ── Core fields ─────────────────────────────────── */}
@@ -775,7 +873,12 @@ const BrokerStatusPill = ({ brokerStatus }: { brokerStatus: BrokerStatus | null 
     const label = isLive ? '⚠ LIVE TRADING' : isPaper ? 'PAPER TRADING' : 'SIM MODE';
     const cls = isLive ? 'broker-live' : isPaper ? 'broker-paper' : 'broker-sim';
     return (
-        <div className={`broker-status-banner ${cls}`}>
+        <div
+            className={`broker-status-banner ${cls}`}
+            role="alert"
+            aria-label={`Trading mode: ${label}`}
+            data-tooltip={isLive ? 'LIVE mode — real orders are being executed against your live IBKR account.' : isPaper ? 'Paper mode — orders execute against IBKR paper account (no real money).' : 'Simulation mode — no real orders, local model only.'}
+        >
             <span className="broker-pill">{label}</span>
             {isLive && (
                 <span className="broker-banner-note">
@@ -888,6 +991,8 @@ const PortfolioBar = ({
     lastFetchMs: number;
 }) => {
     const [marketStatus, setMarketStatus] = useState(getMarketStatus());
+    const [navDrillOpen, setNavDrillOpen] = useState(false);
+
     useEffect(() => {
         const id = setInterval(() => setMarketStatus(getMarketStatus()), 10000);
         return () => clearInterval(id);
@@ -908,77 +1013,131 @@ const PortfolioBar = ({
     const isLiveAccount = !!account && !account.error;
 
     return (
-        <div className="portfolio-bar">
-            {/* Mode toggle pill */}
-            <Tooltip text="Toggle between Paper Trading (live IBKR paper account) and Simulation (local model)">
-                <div
-                    className={`port-pill mode-toggle ${simMode === 'paper' ? 'paper' : 'sim'}`}
-                    onClick={onSimToggle}
-                    style={{ cursor: 'pointer' }}
-                >
-                    <span className="port-pill-label">MODE</span>
-                    <span className="port-pill-value">{simMode.toUpperCase()}</span>
-                </div>
-            </Tooltip>
-
-            <Tooltip text={isLiveAccount ? 'Net Liquidation Value from live IBKR paper account' : 'Simulated NAV'}>
-                <div className="port-pill">
-                    <span className="port-pill-label">
-                        NET LIQ {isLiveAccount && <span className="ibkr-live-dot" />}
-                        <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span>
-                    </span>
-                    <span className="port-pill-value neutral">{netliq !== null ? formatUSD(netliq) : '...'}</span>
-                </div>
-            </Tooltip>
-            <Tooltip text="Available cash balance">
-                <div className="port-pill">
-                    <span className="port-pill-label">CASH <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
-                    <span className="port-pill-value">{cash !== null ? formatUSD(cash) : '...'}</span>
-                </div>
-            </Tooltip>
-            <Tooltip text="Buying power (4× cash for margin accounts)">
-                <div className="port-pill">
-                    <span className="port-pill-label">BUY PWR</span>
-                    <span className="port-pill-value">{formatUSD(bp)}</span>
-                </div>
-            </Tooltip>
-            <Tooltip text="Unrealized P&L: current mark-to-market on open positions">
-                <div className="port-pill">
-                    <span className="port-pill-label">UNREALIZED</span>
-                    <span className={`port-pill-value ${unreal !== null && unreal >= 0 ? 'pos' : 'neg'}`}>
-                        {unreal !== null ? (unreal !== 0 ? (unreal > 0 ? '+' : '') + formatUSD(unreal) : '$0.00') : '...'}
-                    </span>
-                </div>
-            </Tooltip>
-            <Tooltip text="Realized P&L: locked-in profit/loss from closed trades">
-                <div className="port-pill">
-                    <span className="port-pill-label">REALIZED <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
-                    <span className={`port-pill-value ${real !== null && real >= 0 ? 'pos' : 'neg'}`}>
-                        {real !== null ? formatUSD(real) : '...'}
-                    </span>
-                </div>
-            </Tooltip>
-
-            {simMode === 'sim' && (
-                <Tooltip text="Reset simulation balances to $25k">
-                    <button className="sim-reset-btn" onClick={onSimReset}>
-                        RESET SIM
-                    </button>
-                </Tooltip>
+        <>
+            {navDrillOpen && (
+                <NavDrillModal
+                    portfolio={portfolio}
+                    account={account}
+                    simMode={simMode}
+                    onClose={() => setNavDrillOpen(false)}
+                />
             )}
-
-            <div className="market-clock">
-                <div className={`market-status-badge ${marketStatus.cls}`}>
-                    {marketStatus.label}
-                </div>
-                <Tooltip text={`Data last refreshed ${Math.floor(staleSec)}s ago. Over 10s is considered stale — prices may not reflect current market.`}>
-                    <div className="live-indicator">
-                        <div className={`live-dot ${isFetching ? 'active' : isStale ? 'stale' : 'active'}`} />
-                        <span>{isFetching ? 'Fetching…' : isStale ? 'Stale' : 'Live'}</span>
+            <div className="portfolio-bar" role="region" aria-label="Portfolio summary">
+                {/* Mode toggle pill */}
+                <Tooltip text="Toggle between Paper Trading (live IBKR paper account) and Simulation (local model)">
+                    <div
+                        className={`port-pill mode-toggle ${simMode === 'paper' ? 'paper' : 'sim'}`}
+                        onClick={onSimToggle}
+                        style={{ cursor: 'pointer' }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Trading mode: ${simMode}. Click to toggle.`}
+                        data-tooltip="Toggle between Paper Trading (live IBKR paper account) and Simulation (local model)"
+                        onKeyDown={e => e.key === 'Enter' && onSimToggle()}
+                    >
+                        <span className="port-pill-label">MODE</span>
+                        <span className="port-pill-value">{simMode.toUpperCase()}</span>
                     </div>
                 </Tooltip>
+
+                <Tooltip text={isLiveAccount ? 'Net Liquidation Value from live IBKR paper account. Click for full NAV breakdown.' : 'Simulated NAV. Click for breakdown.'}>
+                    <div
+                        className="port-pill clickable"
+                        onClick={() => setNavDrillOpen(true)}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Net Liquidation Value: ${netliq !== null ? formatUSD(netliq) : 'loading'}. Click for breakdown.`}
+                        data-tooltip={isLiveAccount ? 'Net Liquidation Value from live IBKR paper account. Click for full NAV breakdown.' : 'Simulated NAV. Click for breakdown.'}
+                        onKeyDown={e => e.key === 'Enter' && setNavDrillOpen(true)}
+                        style={{ cursor: 'pointer' }}
+                    >
+                        <span className="port-pill-label">
+                            NET LIQ {isLiveAccount && <span className="ibkr-live-dot" />}
+                            <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span>
+                        </span>
+                        <span className="port-pill-value neutral">{netliq !== null ? formatUSD(netliq) : '...'}</span>
+                    </div>
+                </Tooltip>
+                <Tooltip text="Available cash balance — spendable funds excluding open position values">
+                    <div
+                        className="port-pill"
+                        data-tooltip="Available cash balance — spendable funds excluding open position values"
+                        aria-label={`Cash balance: ${cash !== null ? formatUSD(cash) : 'loading'}`}
+                    >
+                        <span className="port-pill-label">CASH <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
+                        <span className="port-pill-value">{cash !== null ? formatUSD(cash) : '...'}</span>
+                    </div>
+                </Tooltip>
+                <Tooltip text="Buying power (4× cash for margin accounts)">
+                    <div
+                        className="port-pill"
+                        data-tooltip="Buying power (4× cash for margin accounts)"
+                        aria-label={`Buying power: ${formatUSD(bp)}`}
+                    >
+                        <span className="port-pill-label">BUY PWR</span>
+                        <span className="port-pill-value">{formatUSD(bp)}</span>
+                    </div>
+                </Tooltip>
+                <Tooltip text="Unrealized P&L: current mark-to-market on open positions">
+                    <div
+                        className="port-pill"
+                        data-tooltip="Unrealized P&L: current mark-to-market on open positions"
+                        aria-label={`Unrealized P&L: ${unreal !== null ? formatUSD(unreal) : 'loading'}`}
+                    >
+                        <span className="port-pill-label">UNREALIZED</span>
+                        <span className={`port-pill-value ${unreal !== null && unreal >= 0 ? 'pos' : 'neg'}`}>
+                            {unreal !== null ? (unreal !== 0 ? (unreal > 0 ? '+' : '') + formatUSD(unreal) : '$0.00') : '...'}
+                        </span>
+                    </div>
+                </Tooltip>
+                <Tooltip text="Realized P&L: locked-in profit/loss from closed trades">
+                    <div
+                        className="port-pill"
+                        data-tooltip="Realized P&L: locked-in profit/loss from closed trades"
+                        aria-label={`Realized P&L: ${real !== null ? formatUSD(real) : 'loading'}`}
+                    >
+                        <span className="port-pill-label">REALIZED <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
+                        <span className={`port-pill-value ${real !== null && real >= 0 ? 'pos' : 'neg'}`}>
+                            {real !== null ? formatUSD(real) : '...'}
+                        </span>
+                    </div>
+                </Tooltip>
+
+                {simMode === 'sim' && (
+                    <Tooltip text="Reset simulation balances to $25k">
+                        <button
+                            className="sim-reset-btn"
+                            onClick={onSimReset}
+                            aria-label="Reset simulation portfolio to $25,000"
+                            data-tooltip="Reset simulation balances to $25k"
+                        >
+                            RESET SIM
+                        </button>
+                    </Tooltip>
+                )}
+
+                <div className="market-clock">
+                    <div
+                        className={`market-status-badge ${marketStatus.cls}`}
+                        aria-label={`Market status: ${marketStatus.label}`}
+                        role="status"
+                    >
+                        {marketStatus.label}
+                    </div>
+                    <Tooltip text={`Data last refreshed ${Math.floor(staleSec)}s ago. Over 10s is considered stale — prices may not reflect current market.`}>
+                        <div
+                            className="live-indicator"
+                            data-tooltip={`Data last refreshed ${Math.floor(staleSec)}s ago. Over 10s is stale.`}
+                            aria-label={isFetching ? 'Fetching data' : isStale ? 'Data is stale' : 'Data is live'}
+                            role="status"
+                        >
+                            <div className={`live-dot ${isFetching ? 'active' : isStale ? 'stale' : 'active'}`} aria-hidden="true" />
+                            <span>{isFetching ? 'Fetching…' : isStale ? 'Stale' : 'Live'}</span>
+                        </div>
+                    </Tooltip>
+                </div>
             </div>
-        </div>
+        </>
     );
 };
 
@@ -1031,14 +1190,14 @@ const SignalCommand = ({
     };
 
     return (
-        <div className="dash-col card">
+        <div className="dash-col card" role="region" aria-label="Signal Command — live Alpha Engine signals">
             <div className="section-header">
                 <Tooltip text="Live conviction signals from the Alpha Engine. Click any card for full details.">
-                    <span className="section-title">⚡ SIGNAL COMMAND</span>
+                    <span className="section-title" data-tooltip="Live conviction signals from the Alpha Engine. Click any card for full details.">⚡ SIGNAL COMMAND</span>
                 </Tooltip>
                 <div className="section-meta">
-                    <span className="inline-badge">{signals.length}</span>
-                    {hasNew && <span className="inline-badge new">NEW</span>}
+                    <span className="inline-badge" aria-label={`${signals.length} signals`}>{signals.length}</span>
+                    {hasNew && <span className="inline-badge new" aria-label="New signals available">NEW</span>}
                 </div>
             </div>
             <div className="scroll-col">
@@ -1055,6 +1214,10 @@ const SignalCommand = ({
                                 className={`signal-card ${isBull ? 'bullish' : 'bearish'} ${isNew ? 'signal-new' : ''} ${isStale ? 'signal-stale' : ''}`}
                                 onClick={() => onSelectSignal(s)}
                                 title="Click for full signal breakdown"
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`${s.direction} signal: ${contract}, ${confPct.toFixed(1)}% confidence. Click for full breakdown.`}
+                                onKeyDown={e => e.key === 'Enter' && onSelectSignal(s)}
                             >
                                 <div className="signal-top-row">
                                     <Tooltip text={contractExplanation(s)}>
@@ -1064,7 +1227,7 @@ const SignalCommand = ({
                                         {s.action}
                                     </span>
                                 </div>
-                                <div className="conviction-bar-wrap">
+                                <div className="conviction-bar-wrap" role="meter" aria-valuenow={confPct} aria-valuemin={0} aria-valuemax={100} aria-label={`Conviction: ${confPct.toFixed(1)}%`}>
                                     <div className="conviction-bar-track">
                                         <div
                                             className="conviction-bar-fill"
@@ -1073,7 +1236,7 @@ const SignalCommand = ({
                                     </div>
                                     <div className="conviction-label">
                                         <Tooltip text="Model conviction: probability the signal is correct">
-                                            <span>{confPct.toFixed(1)}% conviction</span>
+                                            <span data-tooltip="Model conviction: probability the signal is correct">{confPct.toFixed(1)}% conviction</span>
                                         </Tooltip>
                                     </div>
                                 </div>
@@ -1285,10 +1448,10 @@ const TradingFloor = ({
     return (
         <>
             {selectedPos && <PositionModal pos={selectedPos} onClose={() => setSelectedPos(null)} />}
-            <div className="dash-col card">
+            <div className="dash-col card" role="region" aria-label="Trading Floor — open positions">
                 <div className="section-header">
                     <Tooltip text="Open positions from live IBKR paper account. Click any card for drill-down.">
-                        <span className="section-title">🏛 TRADING FLOOR</span>
+                        <span className="section-title" data-tooltip="Open positions from live IBKR paper account. Click any card for drill-down.">🏛 TRADING FLOOR</span>
                     </Tooltip>
                     <div className="section-meta">
                         {brokerStatus && (
@@ -1862,7 +2025,14 @@ const LossSummaryWidget = ({ summary }: { summary: LossSummary | null }) => {
 // ============================================================
 //  Model Scorecard Panel
 // ============================================================
-const ModelScorecardPanel = ({ scorecard }: { scorecard: ModelScorecard[] }) => {
+const ModelScorecardPanel = ({ scorecard, isLoading }: { scorecard: ModelScorecard[]; isLoading?: boolean }) => {
+    if (isLoading) {
+        return (
+            <div aria-busy="true" aria-label="Loading scorecard…">
+                <SkeletonTable rows={3} cols={8} />
+            </div>
+        );
+    }
     if (scorecard.length === 0) {
         return <div className="scorecard-empty">No closed trades recorded yet.</div>;
     }
@@ -1871,14 +2041,14 @@ const ModelScorecardPanel = ({ scorecard }: { scorecard: ModelScorecard[] }) => 
             <table className="scorecard-table">
                 <thead>
                     <tr>
-                        <th>Model</th>
-                        <th><Tooltip text="Total number of closed trades attributed to this model">Trades</Tooltip></th>
-                        <th><Tooltip text="Percentage of closed trades that were profitable">Win%</Tooltip></th>
-                        <th><Tooltip text="Average P&L per closed trade in dollars">Avg P&L</Tooltip></th>
-                        <th><Tooltip text="Sum of all realized P&L from this model's trades">Total P&L</Tooltip></th>
-                        <th><Tooltip text="Annualized Sharpe ratio — risk-adjusted return. >1 is good, >2 is excellent.">Sharpe</Tooltip></th>
-                        <th><Tooltip text="Win rate on trades where confidence was ≥80%. Tests if high-conviction signals outperform.">Hi-Conf%</Tooltip></th>
-                        <th><Tooltip text="Most common reason this model's trades were losers">Top Loss Tag</Tooltip></th>
+                        <th scope="col">Model</th>
+                        <th scope="col"><Tooltip text="Total number of closed trades attributed to this model"><span data-tooltip="Total number of closed trades attributed to this model">Trades</span></Tooltip></th>
+                        <th scope="col"><Tooltip text="Percentage of closed trades that were profitable"><span data-tooltip="Percentage of closed trades that were profitable">Win%</span></Tooltip></th>
+                        <th scope="col"><Tooltip text="Average P&L per closed trade in dollars"><span data-tooltip="Average P&L per closed trade in dollars">Avg P&L</span></Tooltip></th>
+                        <th scope="col"><Tooltip text="Sum of all realized P&L from this model's trades"><span data-tooltip="Sum of all realized P&L from this model's trades">Total P&L</span></Tooltip></th>
+                        <th scope="col"><Tooltip text="Annualized Sharpe ratio — risk-adjusted return. >1 is good, >2 is excellent."><span data-tooltip="Annualized Sharpe ratio — risk-adjusted return. >1 is good, >2 is excellent.">Sharpe</span></Tooltip></th>
+                        <th scope="col"><Tooltip text="Win rate on trades where confidence was ≥80%. Tests if high-conviction signals outperform."><span data-tooltip="Win rate on trades where confidence was ≥80%. Tests if high-conviction signals outperform.">Hi-Conf%</span></Tooltip></th>
+                        <th scope="col"><Tooltip text="Most common reason this model's trades were losers"><span data-tooltip="Most common reason this model's trades were losers">Top Loss Tag</span></Tooltip></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1926,9 +2096,13 @@ const ModelScorecardPanel = ({ scorecard }: { scorecard: ModelScorecard[] }) => 
 // ============================================================
 //  Intel Panel
 // ============================================================
-const IntelPanel = ({ intel }: { intel: Intel | null }) => {
-    if (!intel || !intel.vix) {
-        return <div className="intel-loading">Fetching market intelligence…</div>;
+const IntelPanel = ({ intel, isLoading }: { intel: Intel | null; isLoading?: boolean }) => {
+    if (isLoading || !intel || !intel.vix) {
+        return (
+            <div aria-busy="true" aria-label="Loading market intelligence…">
+                <SkeletonCard rows={4} />
+            </div>
+        );
     }
     const news = intel.news ?? { headlines: [], sentiment_score: 0, headline_count: 0, bull_hits: 0, bear_hits: 0 };
     const vix = intel.vix ?? { vix_level: 0, vix_status: 'NORMAL' };
@@ -1968,9 +2142,9 @@ const IntelPanel = ({ intel }: { intel: Intel | null }) => {
         <div className="intel-panel">
             <div className="intel-grid">
                 {/* Card 1: Market Pulse */}
-                <div className="intel-card">
+                <div className="intel-card" role="region" aria-label="Market Pulse — VIX and SPY">
                     <Tooltip text="VIX = market fear gauge. SPY = S&P 500 ETF trend. Both influence TSLA signal confidence.">
-                        <div className="intel-card-title">Market Pulse</div>
+                        <div className="intel-card-title" data-tooltip="VIX = market fear gauge. SPY = S&P 500 ETF trend. Both influence TSLA signal confidence.">Market Pulse</div>
                     </Tooltip>
                     <div className="intel-row">
                         <span className="intel-label">VIX</span>
@@ -1990,11 +2164,11 @@ const IntelPanel = ({ intel }: { intel: Intel | null }) => {
                 </div>
 
                 {/* Card 2: News Sentiment */}
-                <div className="intel-card">
+                <div className="intel-card" role="region" aria-label="News Sentiment">
                     <Tooltip text="NLP score from recent TSLA headlines + Musk mentions. Positive = bullish sentiment, negative = bearish.">
-                        <div className="intel-card-title">
+                        <div className="intel-card-title" data-tooltip="NLP score from recent TSLA headlines + Musk mentions. Positive = bullish sentiment, negative = bearish.">
                             News Sentiment
-                            <span className="intel-count-badge">{news.headline_count}</span>
+                            <span className="intel-count-badge" aria-label={`${news.headline_count} headlines`}>{news.headline_count}</span>
                         </div>
                     </Tooltip>
                     <div className="sentiment-bar-wrap">
@@ -2021,9 +2195,9 @@ const IntelPanel = ({ intel }: { intel: Intel | null }) => {
                 </div>
 
                 {/* Card 3: Options Flow */}
-                <div className="intel-card">
+                <div className="intel-card" role="region" aria-label="Options Flow — put/call ratio">
                     <Tooltip text="Put/Call ratio from the nearest expiry chain. P/C > 1.3 = bearish positioning. P/C < 0.7 = bullish. OI bars show relative call vs put open interest.">
-                        <div className="intel-card-title">Options Flow</div>
+                        <div className="intel-card-title" data-tooltip="Put/Call ratio from the nearest expiry chain. P/C > 1.3 = bearish positioning. P/C < 0.7 = bullish. OI bars show relative call vs put open interest.">Options Flow</div>
                     </Tooltip>
                     <div className="intel-row">
                         <span className="intel-label">P/C Ratio</span>
@@ -2052,9 +2226,9 @@ const IntelPanel = ({ intel }: { intel: Intel | null }) => {
                 </div>
 
                 {/* Card 4: Earnings Watch */}
-                <div className="intel-card">
+                <div className="intel-card" role="region" aria-label="Earnings Watch">
                     <Tooltip text="Next TSLA earnings date. Within 2 days = reduced signal confidence (±50% haircut) due to binary event risk.">
-                        <div className="intel-card-title">Earnings Watch</div>
+                        <div className="intel-card-title" data-tooltip="Next TSLA earnings date. Within 2 days = reduced signal confidence (±50% haircut) due to binary event risk.">Earnings Watch</div>
                     </Tooltip>
                     {earnings.next_earnings_date ? (
                         <>
@@ -2095,10 +2269,10 @@ const ExecutionLog = ({ trades, fromLog, brokerStatus, lossSummary, simMode }: {
     const todayTrades = trades.filter(t => new Date(t.time).toDateString() === today);
 
     return (
-        <div className="dash-col card">
+        <div className="dash-col card" role="region" aria-label="Execution Log — all executed trades">
             <div className="section-header">
                 <Tooltip text="All executed orders — buys and sells with realized P&L">
-                    <span className="section-title">📋 {fromLog ? 'EXECUTION LOG (from system log)' : 'EXECUTION LOG'}</span>
+                    <span className="section-title" data-tooltip="All executed orders — buys and sells with realized P&L">📋 {fromLog ? 'EXECUTION LOG (from system log)' : 'EXECUTION LOG'}</span>
                 </Tooltip>
                 <div className="section-meta">
                     {brokerStatus && (
@@ -2216,11 +2390,19 @@ const CollapsiblePanel = ({
 
     return (
         <div className="collapsible-panel">
-            <div className="collapsible-panel-header" onClick={toggle}>
+            <div
+                className="collapsible-panel-header"
+                onClick={toggle}
+                role="button"
+                tabIndex={0}
+                aria-expanded={open}
+                aria-label={`${title} panel — click to ${open ? 'collapse' : 'expand'}`}
+                onKeyDown={e => e.key === 'Enter' && toggle()}
+            >
                 <span className="collapsible-panel-title">{title}</span>
-                <span className={`panel-chevron ${open ? 'open' : ''}`}>▶</span>
+                <span className={`panel-chevron ${open ? 'open' : ''}`} aria-hidden="true">▶</span>
             </div>
-            <div className={`collapsible-panel-body ${open ? '' : 'hidden'}`}>
+            <div className={`collapsible-panel-body ${open ? '' : 'hidden'}`} aria-hidden={!open}>
                 {children}
             </div>
         </div>
@@ -2231,7 +2413,7 @@ const CollapsiblePanel = ({
 //  Main Dashboard Component
 // ============================================================
 
-const Dashboard = ({ brokerStatus }: { brokerStatus: BrokerStatus | null }) => {
+const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: BrokerStatus | null; integrityRed?: boolean }) => {
     const [signals, setSignals] = useState<Signal[]>([]);
     const [trades, setTrades] = useState<Trade[]>([]);
     const [portfolio, setPortfolio] = useState<Portfolio>({
@@ -2245,8 +2427,10 @@ const Dashboard = ({ brokerStatus }: { brokerStatus: BrokerStatus | null }) => {
     const [ibkrPositions, setIBKRPositions] = useState<IBKRPosition[]>([]);
     const [simMode, setSimMode] = useState<string>('paper');
     const [scorecard, setScorecard] = useState<ModelScorecard[]>([]);
+    const [scorecardLoading, setScorecardLoading] = useState(true);
     const [lossSummary, setLossSummary] = useState<LossSummary | null>(null);
     const [intel, setIntel] = useState<Intel | null>(null);
+    const [intelLoading, setIntelLoading] = useState(true);
     const [systemState, setSystemState] = useState<SystemState | null>(null);
     const [audit, setAudit] = useState<DataAudit | null>(null);
     const [isFetching, setIsFetching] = useState(false);
@@ -2296,6 +2480,7 @@ const Dashboard = ({ brokerStatus }: { brokerStatus: BrokerStatus | null }) => {
 
     // Fetch scorecard + loss summary (60s interval)
     const fetchScorecard = useCallback(async () => {
+        setScorecardLoading(true);
         try {
             const [scRes, lsRes] = await Promise.all([
                 fetch('/api/scorecard'),
@@ -2304,6 +2489,7 @@ const Dashboard = ({ brokerStatus }: { brokerStatus: BrokerStatus | null }) => {
             if (scRes.ok) setScorecard(await scRes.json() as ModelScorecard[]);
             if (lsRes.ok) setLossSummary(await lsRes.json() as LossSummary);
         } catch { /* ignore */ }
+        setScorecardLoading(false);
     }, []);
 
     useEffect(() => {
@@ -2313,10 +2499,12 @@ const Dashboard = ({ brokerStatus }: { brokerStatus: BrokerStatus | null }) => {
 
     // Fetch intel (5 min interval — cached server-side anyway)
     const fetchIntel = useCallback(async () => {
+        setIntelLoading(true);
         try {
             const r = await fetch('/api/intel');
             if (r.ok) setIntel(await r.json() as Intel);
         } catch { /* ignore */ }
+        setIntelLoading(false);
     }, []);
 
     useEffect(() => {
@@ -2448,6 +2636,49 @@ const Dashboard = ({ brokerStatus }: { brokerStatus: BrokerStatus | null }) => {
                 <SignalModal signal={selectedSignal} onClose={() => setSelectedSignal(null)} />
             )}
 
+            {/* Integrity RED warning banner */}
+            {integrityRed && (
+                <div
+                    role="alert"
+                    aria-live="assertive"
+                    style={{
+                        background: 'rgba(248,81,73,0.12)',
+                        border: '1px solid rgba(248,81,73,0.4)',
+                        borderRadius: '6px',
+                        padding: '8px 16px',
+                        margin: '8px 0 0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        fontSize: '0.8rem',
+                        color: '#f85149',
+                        fontWeight: 600,
+                    }}
+                >
+                    <span>⛔</span>
+                    <span>INTEGRITY ALERT — Price or chain data integrity check failed. New trades are blocked. Check INTEGRITY indicators in the header.</span>
+                    <button
+                        data-testid="new-trade-blocked"
+                        disabled
+                        style={{
+                            marginLeft: 'auto',
+                            padding: '4px 14px',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(248,81,73,0.4)',
+                            background: 'rgba(248,81,73,0.1)',
+                            color: '#f85149',
+                            cursor: 'not-allowed',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                        }}
+                        aria-label="New trade button — disabled while integrity check fails"
+                        aria-disabled="true"
+                    >
+                        NEW TRADE (BLOCKED)
+                    </button>
+                </div>
+            )}
+
             {/* Broker status banner — prominent at top when LIVE */}
             <BrokerStatusPill brokerStatus={brokerStatus} />
 
@@ -2483,13 +2714,13 @@ const Dashboard = ({ brokerStatus }: { brokerStatus: BrokerStatus | null }) => {
                     storageKey="dashboard_intel_open"
                     title="🔭 MARKET INTELLIGENCE"
                 >
-                    <IntelPanel intel={intel} />
+                    <IntelPanel intel={intel} isLoading={intelLoading} />
                 </CollapsiblePanel>
                 <CollapsiblePanel
                     storageKey="dashboard_scorecard_open"
                     title="📊 MODEL SCORECARD"
                 >
-                    <ModelScorecardPanel scorecard={scorecard} />
+                    <ModelScorecardPanel scorecard={scorecard} isLoading={scorecardLoading} />
                 </CollapsiblePanel>
                 <CollapsiblePanel
                     storageKey="dashboard_chart_open"
