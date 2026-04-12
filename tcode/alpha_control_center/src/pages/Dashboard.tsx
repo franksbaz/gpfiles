@@ -3,7 +3,7 @@ import './Dashboard.css';
 import Tooltip from '../components/Tooltip';
 import TradingViewWidget from '../components/TradingViewWidget';
 import SystemMonitor from '../components/SystemMonitor';
-import { SkeletonCard, SkeletonTable, SkeletonLine } from '../components/SkeletonLoader';
+import { SkeletonCard, SkeletonTable } from '../components/SkeletonLoader';
 
 // ============================================================
 //  Types
@@ -977,7 +977,7 @@ const PortfolioBar = ({
     portfolio,
     account,
     accountError,
-    accountLoading,
+    accountLoading: _accountLoading,
     onRetryAccount,
     simMode,
     onSimToggle,
@@ -1075,7 +1075,7 @@ const PortfolioBar = ({
                             NET LIQ {isLiveAccount && <span className="ibkr-live-dot" />}
                             <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span>
                         </span>
-                        <span className="port-pill-value neutral">{netliq !== null ? formatUSD(netliq) : <SkeletonLine width="72px" height="13px" />}</span>
+                        <span className="port-pill-value neutral">{netliq !== null ? formatUSD(netliq) : '—'}</span>
                     </div>
                 </Tooltip>
                 <Tooltip text="Available cash balance — spendable funds excluding open position values">
@@ -1085,7 +1085,7 @@ const PortfolioBar = ({
                         aria-label={`Cash balance: ${cash !== null ? formatUSD(cash) : 'loading'}`}
                     >
                         <span className="port-pill-label">CASH <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
-                        <span className="port-pill-value">{cash !== null ? formatUSD(cash) : <SkeletonLine width="72px" height="13px" />}</span>
+                        <span className="port-pill-value">{cash !== null ? formatUSD(cash) : '—'}</span>
                     </div>
                 </Tooltip>
                 <Tooltip text="Buying power (4× cash for margin accounts)">
@@ -1106,7 +1106,7 @@ const PortfolioBar = ({
                     >
                         <span className="port-pill-label">UNREALIZED</span>
                         <span className={`port-pill-value ${unreal !== null && unreal >= 0 ? 'pos' : 'neg'}`}>
-                            {unreal !== null ? (unreal !== 0 ? (unreal > 0 ? '+' : '') + formatUSD(unreal) : '$0.00') : <SkeletonLine width="72px" height="13px" />}
+                            {unreal !== null ? (unreal !== 0 ? (unreal > 0 ? '+' : '') + formatUSD(unreal) : '$0.00') : '—'}
                         </span>
                     </div>
                 </Tooltip>
@@ -1118,7 +1118,7 @@ const PortfolioBar = ({
                     >
                         <span className="port-pill-label">REALIZED <span className="port-pill-source">{isPaper ? '(IBKR)' : '(SIM)'}</span></span>
                         <span className={`port-pill-value ${real !== null && real >= 0 ? 'pos' : 'neg'}`}>
-                            {real !== null ? formatUSD(real) : <SkeletonLine width="72px" height="13px" />}
+                            {real !== null ? formatUSD(real) : '—'}
                         </span>
                     </div>
                 </Tooltip>
@@ -2132,12 +2132,15 @@ const ModelScorecardPanel = ({ scorecard, isLoading }: { scorecard: ModelScoreca
 //  Intel Panel
 // ============================================================
 const IntelPanel = ({ intel, isLoading }: { intel: Intel | null; isLoading?: boolean }) => {
-    if (isLoading || !intel || !intel.vix) {
+    if (isLoading) {
         return (
             <div aria-busy="true" aria-label="Loading market intelligence…">
                 <SkeletonCard rows={4} />
             </div>
         );
+    }
+    if (!intel || !intel.vix) {
+        return <div className="scorecard-empty">No market intelligence data available.</div>;
     }
     const news = intel.news ?? { headlines: [], sentiment_score: 0, headline_count: 0, bull_hits: 0, bear_hits: 0 };
     const vix = intel.vix ?? { vix_level: 0, vix_status: 'NORMAL' };

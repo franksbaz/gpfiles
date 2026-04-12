@@ -15,7 +15,7 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:2112';
 
 test.describe('UX: Every hoverable element is labelled', () => {
   test('all interactive elements have title, aria-label, or data-tooltip', async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await page.goto(BASE_URL, { waitUntil: 'load' });
     await page.waitForTimeout(1000);
 
     const violations = await page.evaluate(() => {

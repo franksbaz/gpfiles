@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Server, Zap, FileText, HeartPulse, GitCommit } from 'lucide-react';
 import './SystemMonitor.css';
 import Tooltip from './Tooltip';
-import { SkeletonLine } from './SkeletonLoader';
 
 import { useDataFetching } from '../hooks';
 
@@ -147,7 +146,7 @@ const VitalsCard = ({ label, value, tooltip, onClick, valueClass }: { label: str
             {tooltip ? <Tooltip text={tooltip}>{label}</Tooltip> : label}
         </span>
         <span className={`vitals-value${valueClass ? ' ' + valueClass : ''}`}>
-            {value === null || value === undefined || value === '' ? <SkeletonLine width="48px" height="12px" /> : value}
+            {value === null || value === undefined || value === '' ? '—' : value}
         </span>
     </div>
 );
@@ -443,7 +442,7 @@ const CompactStat = ({ label, value }: { label: string, value: any }) => (
         <span className="value">
             {value !== null && value !== undefined && value !== '' && value !== false
                 ? value
-                : <SkeletonLine width="32px" height="11px" />}
+                : '—'}
         </span>
     </div>
 );

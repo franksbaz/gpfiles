@@ -7,7 +7,8 @@
  * Scope: requires the app to be running on PLAYWRIGHT_BASE_URL (default http://localhost:2112)
  */
 
-import { test, expect, Page, Locator } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import type { Page, Locator } from '@playwright/test';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:2112';
 
@@ -32,8 +33,9 @@ async function assertFullyInViewport(page: Page, locator: Locator, label: string
 
 test.describe('Tooltip Visibility — all [data-tooltip] elements stay inside viewport', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
-    // Give React a moment to hydrate
+    await page.goto(BASE_URL, { waitUntil: 'load' });
+    // Give React a moment to hydrate and integrity bar to render
+    await page.waitForSelector('.integrity-bar', { timeout: 10_000 });
     await page.waitForTimeout(500);
   });
 

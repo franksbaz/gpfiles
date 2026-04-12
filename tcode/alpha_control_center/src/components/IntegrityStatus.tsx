@@ -285,19 +285,18 @@ const IntegrityStatus = ({ onStatusChange }: IntegrityStatusProps) => {
 
   const fetchIntegrity = useCallback(async () => {
     try {
-      // Fetch audit data which contains price and chain info
-      const [auditRes, brokerRes, fillsRes] = await Promise.all([
+      // Fetch audit and broker status — these are fast.
+      // /api/fills is omitted here: it performs a live IBKR connection attempt that can
+      // take 10+ s; last_fill_id is cosmetic and shown as "none" when unavailable.
+      const [auditRes, brokerRes] = await Promise.all([
         fetch('/api/data/audit'),
         fetch('/api/broker/status'),
-        fetch('/api/fills'),
       ]);
 
-      const audit = auditRes.ok ? await auditRes.json() : null;
-      const broker = brokerRes.ok ? await brokerRes.json() : null;
-      const fills = fillsRes.ok ? await fillsRes.json() : [];
+      const audit = auditRes.ok ? await auditRes.json().catch(() => null) : null;
+      const broker = brokerRes.ok ? await brokerRes.json().catch(() => null) : null;
 
       const sv = audit?.spot_validation ?? {};
-      const lastFill = Array.isArray(fills) && fills.length > 0 ? fills[fills.length - 1] : null;
 
       // NAV checksum: hash of nav+cash+positions for quick integrity check
       const navVal = audit?.ibkr_spot ?? 0;
@@ -321,7 +320,7 @@ const IntegrityStatus = ({ onStatusChange }: IntegrityStatusProps) => {
         },
         execution: {
           broker_confirmed: broker?.connected ?? false,
-          last_fill_id: lastFill?.id?.toString() ?? null,
+          last_fill_id: null,
           nav_checksum: navChecksum,
           mode: broker?.mode ?? 'simulation',
           connected: broker?.connected ?? false,
@@ -358,10 +357,10 @@ const IntegrityStatus = ({ onStatusChange }: IntegrityStatusProps) => {
 
   return (
     <>
-      {panelOpen && data && (
+      {panelOpen && (
         <IntegrityPanel
           data={data}
-          loading={loading}
+          loading={loading || !data}
           onClose={() => setPanelOpen(false)}
           openSection={openSection}
         />

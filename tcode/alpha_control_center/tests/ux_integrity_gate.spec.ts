@@ -5,14 +5,17 @@
  * Also verifies that integrity indicators render with correct ARIA attributes.
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:2112';
 
 test.describe('Integrity Status Panel', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
+    await page.goto(BASE_URL, { waitUntil: 'load' });
+    // Wait for integrity bar to render and data to arrive (up to 10s)
+    await page.waitForSelector('.integrity-bar', { timeout: 10_000 });
+    await page.waitForTimeout(2000);
   });
 
   test('integrity bar renders with three indicators', async ({ page }) => {
@@ -36,18 +39,24 @@ test.describe('Integrity Status Panel', () => {
   });
 
   test('clicking an integrity indicator opens the detail panel', async ({ page }) => {
-    const indicator = page.locator('.integrity-indicator').first();
-    await indicator.click();
+    // Use evaluate to fire click directly (avoids Playwright's post-click navigation wait)
+    await page.evaluate(() => {
+      const el = document.querySelector('.integrity-indicator') as HTMLElement | null;
+      if (el) el.click();
+    });
 
     const panel = page.locator('.integrity-panel');
-    await expect(panel).toBeVisible();
+    await expect(panel).toBeVisible({ timeout: 5000 });
 
-    // Panel should have a status banner
+    // Panel should have a status banner — wait up to 8s for data to arrive
     const banner = page.locator('.integrity-status-banner');
-    await expect(banner).toBeVisible();
+    await expect(banner).toBeVisible({ timeout: 8000 });
 
     // Close it
-    await page.locator('.integrity-panel-header button').click();
+    await page.evaluate(() => {
+      const btn = document.querySelector('.integrity-panel-header button') as HTMLElement | null;
+      if (btn) btn.click();
+    });
     await expect(panel).not.toBeVisible();
   });
 
@@ -81,8 +90,8 @@ test.describe('Integrity Status Panel', () => {
     });
 
     // Reload to pick up the mocked data
-    await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForTimeout(3000);
 
     // Check if the integrity red banner appears (may take up to 15s for next poll cycle,
     // but since we intercept on load, it should appear quickly)
@@ -109,14 +118,21 @@ test.describe('Integrity Status Panel', () => {
       const indicators = page.locator('.integrity-indicator');
       expect(await indicators.count()).toBeGreaterThan(0);
     }
+
+    // Clean up route mock so subsequent tests use real API
+    await page.unroute('**/api/data/audit');
   });
 
   test('integrity panel tabs are keyboard accessible', async ({ page }) => {
-    const indicator = page.locator('.integrity-indicator').first();
-    await indicator.click();
+    await page.evaluate(() => {
+      const el = document.querySelector('.integrity-indicator') as HTMLElement | null;
+      if (el) el.click();
+    });
 
     const panel = page.locator('.integrity-panel');
-    await expect(panel).toBeVisible();
+    await expect(panel).toBeVisible({ timeout: 5000 });
+    // Wait for data to load so tabs render
+    await expect(page.locator('.integrity-status-banner')).toBeVisible({ timeout: 8000 });
 
     // Tab through the tab buttons
     const tabs = page.locator('.integrity-tab');
@@ -125,7 +141,10 @@ test.describe('Integrity Status Panel', () => {
 
     // Click each tab and verify it becomes active
     for (let i = 0; i < tabCount; i++) {
-      await tabs.nth(i).click();
+      await page.evaluate((idx) => {
+        const tabs = document.querySelectorAll('.integrity-tab');
+        (tabs[idx] as HTMLElement)?.click();
+      }, i);
       await expect(tabs.nth(i), `Tab ${i} should be active after click`).toHaveClass(/active/);
 
       const body = page.locator('.integrity-panel-body .integrity-section');
@@ -133,6 +152,9 @@ test.describe('Integrity Status Panel', () => {
     }
 
     // Close
-    await page.locator('.integrity-panel-header button').click();
+    await page.evaluate(() => {
+      const btn = document.querySelector('.integrity-panel-header button') as HTMLElement | null;
+      if (btn) btn.click();
+    });
   });
 });

@@ -21,7 +21,7 @@ const VIEWPORT_WIDTHS = [1280, 1440, 1920];
 
 async function checkTooltipsAtWidth(page: Page, width: number) {
   await page.setViewportSize({ width, height: 800 });
-  await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+  await page.goto(BASE_URL, { waitUntil: 'load' });
   await page.waitForTimeout(800);
 
   const tooltipTargets = page.locator('[data-tooltip]');
@@ -98,7 +98,7 @@ test.describe('UX: Tooltips stay inside viewport at all widths', () => {
 
   test('edge-element tooltips do not clip at 1280px', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await page.goto(BASE_URL, { waitUntil: 'load' });
     await page.waitForTimeout(800);
 
     // Specifically test the rightmost and bottommost tooltipped elements
