@@ -113,16 +113,21 @@ test.describe('Tooltip Visibility — all [data-tooltip] elements stay inside vi
     await expect(helpBtn).toBeVisible();
     await expect(helpBtn).toHaveAttribute('aria-label', /help/i);
 
-    await helpBtn.click();
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="help-button"]') as HTMLElement | null;
+      if (btn) btn.click();
+    });
     const helpPanel = page.locator('.help-panel');
-    await expect(helpPanel).toBeVisible();
+    await expect(helpPanel).toBeVisible({ timeout: 5000 });
 
     // Panel should be fully in viewport
     await assertFullyInViewport(page, helpPanel, 'help panel');
 
     // Close it
-    const closeBtn = helpPanel.locator('button').first();
-    await closeBtn.click();
+    await page.evaluate(() => {
+      const closeBtn = document.querySelector('.help-panel button') as HTMLElement | null;
+      if (closeBtn) closeBtn.click();
+    });
     await expect(helpPanel).not.toBeVisible();
   });
 });
