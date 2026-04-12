@@ -61,7 +61,7 @@ func fetchChainPrices() map[string]float64 {
 
 	// Fetch from Python
 	cmd := exec.Command("./alpha_engine/venv/bin/python", "alpha_engine/ingestion/options_chain_api.py")
-	cmd.Dir = "/home/builder/src/gemini"
+	cmd.Dir = "/home/builder/src/gpfiles/tcode"
 	out, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("[CHAIN] Price fetch failed: %v\n", err)
@@ -625,7 +625,7 @@ func (h *ConfigHandler) ServeBuildInfo(w http.ResponseWriter, r *http.Request) {
 
 func runFillDetail(args ...string) ([]byte, error) {
 	cmd := exec.Command("./alpha_engine/venv/bin/python", append([]string{"alpha_engine/data/fill_detail.py"}, args...)...)
-	cmd.Dir = "/home/builder/src/gemini"
+	cmd.Dir = "/home/builder/src/gpfiles/tcode"
 	cmd.Env = os.Environ()
 	return cmd.Output()
 }
@@ -1081,7 +1081,7 @@ func parseGitLog(dir string, n int) []GitCommit {
 func parseBdIssues() []BeadIssue {
 	enrichedPath := "/home/builder/go/bin:/home/builder/.local/bin:" + os.Getenv("PATH")
 	cmd := exec.Command("/home/builder/.local/bin/bd", "list", "--all", "--flat")
-	cmd.Dir = "/home/builder/src/gemini"
+	cmd.Dir = "/home/builder/src/gpfiles/tcode"
 	cmd.Env = append(os.Environ(), "HOME=/home/builder", "PATH="+enrichedPath)
 	out, err := cmd.Output()
 	if err != nil {
@@ -1152,7 +1152,7 @@ func (h *ConfigHandler) ServeGastownHistory(w http.ResponseWriter, r *http.Reque
 
 	hist := GastownHistory{
 		RefreshedAt:  time.Now().Format(time.RFC3339),
-		RepoLog:      parseGitLog("/home/builder/src/gemini", 30),
+		RepoLog:      parseGitLog("/home/builder/src/gpfiles/tcode", 30),
 		WorkspaceLog: parseGitLog("/home/builder/gt", 20),
 		Beads:        parseBdIssues(),
 		SessionTail:  []string{},
@@ -1506,7 +1506,7 @@ var (
 func runScorecard(mode string, args ...string) (interface{}, error) {
 	cmdArgs := append([]string{"alpha_engine/data/scorecard.py", mode}, args...)
 	cmd := exec.Command("./alpha_engine/venv/bin/python", cmdArgs...)
-	cmd.Dir = "/home/builder/src/gemini"
+	cmd.Dir = "/home/builder/src/gpfiles/tcode"
 	cmd.Env = os.Environ()
 	out, err := cmd.Output()
 	if err != nil {
@@ -1628,7 +1628,7 @@ func (h *ConfigHandler) ServeIntel(w http.ResponseWriter, r *http.Request) {
 		"-c",
 		"import sys; sys.path.insert(0, 'alpha_engine'); from ingestion.intel import get_intel; import json; print(json.dumps(get_intel()))",
 	)
-	cmd.Dir = "/home/builder/src/gemini"
+	cmd.Dir = "/home/builder/src/gpfiles/tcode"
 	cmd.Env = os.Environ()
 	out, err := cmd.Output()
 	if err != nil {
@@ -1659,7 +1659,7 @@ func (h *ConfigHandler) ServeOptionsChain(w http.ResponseWriter, r *http.Request
 	}
 
 	cmd := exec.Command("./alpha_engine/venv/bin/python", args...)
-	cmd.Dir = "/home/builder/src/gemini"
+	cmd.Dir = "/home/builder/src/gpfiles/tcode"
 	out, err := cmd.Output()
 	if err != nil {
 		http.Error(w, `{"error":"options chain fetch failed"}`, 500)
