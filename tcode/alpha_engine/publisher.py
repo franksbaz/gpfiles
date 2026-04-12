@@ -345,16 +345,16 @@ async def broadcast_loop():
 
                 if news_sent > 0.6 and regime == "RISK_ON":
                     direction = SignalDirection.BEARISH  # Bet against euphoria
-                    confidence = random.uniform(0.60, 0.75)
+                    confidence = 0.55 + min(0.35, (abs(news_sent) - 0.6) * 1.75)
                 elif news_sent < -0.6 and regime == "RISK_OFF":
                     direction = SignalDirection.BULLISH  # Bet on panic reversal
-                    confidence = random.uniform(0.60, 0.75)
+                    confidence = 0.55 + min(0.35, (abs(news_sent) - 0.6) * 1.75)
                 else:
                     continue
 
                 action = "BUY"
                 is_spread = False
-                otm_pct = random.uniform(0.08, 0.12)
+                otm_pct = 0.10
                 opt_type = "CALL" if direction == SignalDirection.BULLISH else "PUT"
                 moneyness = 1.0 + otm_pct if opt_type == "CALL" else 1.0 - otm_pct
                 rationale = f"CONTRARIAN: {otm_pct*100:.0f}% OTM — mean reversion on extreme sentiment ({news_sent:.2f})"

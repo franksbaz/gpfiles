@@ -116,7 +116,8 @@ func (s *SignalSubscriber) Start() {
 
 			price := sig.TargetLimitPrice
 			if price <= 0 {
-				price = s.Pricing.CallPrice(sig.UnderlyingPrice, strike, 0.08, 0.04, 0.50)
+				fmt.Printf("SIGNAL REJECTED: TargetLimitPrice=0 for %s — publisher failed to price, skipping execution\n", ticker)
+				return
 			}
 			
 			qty := sig.Quantity

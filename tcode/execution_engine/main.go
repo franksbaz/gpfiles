@@ -129,6 +129,7 @@ func (e *IBKRExecutor) ExecuteOrder(ticker string, optType string, strike float6
 	TradeCount.Inc()
 }
 
+// DEAD CODE — not called from main(). Do not enable without replacing fake data.
 func PaperTradingLoop(executor *IBKRExecutor, pricing *PricingEngine) {
 	log.Println("PHASE 3: Paper Trading (IBKR) Simulation Active.")
 	for i := 0; i < 3; i++ {
@@ -149,12 +150,6 @@ func PaperTradingLoop(executor *IBKRExecutor, pricing *PricingEngine) {
 	}
 }
 
-// fetchConsensusPrice is a mock bridge to the MultiSourcePricing logic.
-// In a real setup, this would be a CGO call or a separate microservice.
-func fetchConsensusPrice() (float64, error) {
-	// For this build, we simulate the consensus price around the high $300s
-	return 392.78 + (rand.Float64() * 2.0) - 1.0, nil
-}
 
 func main() {
 	// Setup logging to file
@@ -270,10 +265,7 @@ func main() {
 	// Periodic Portfolio Revaluation (Task: Real-time NAV & Unrealized PnL)
 	go func() {
 		for {
-			spot, err := fetchConsensusPrice() 
-			if err == nil {
-				executor.Portfolio.UpdatePositions(spot, pe)
-			}
+			executor.Portfolio.UpdatePositions()
 			time.Sleep(5 * time.Second)
 		}
 	}()
