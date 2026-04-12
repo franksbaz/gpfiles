@@ -3,9 +3,9 @@
 # Exit 0 = pass, Exit 1 = fail
 # Usage: ./scripts/ux_gate.sh [--base-url http://localhost:2112]
 #
-# The script requires:
+# Requirements:
 #   1. The frontend app to be running (PLAYWRIGHT_BASE_URL or http://localhost:2112)
-#   2. node_modules with Playwright installed (in alpha_control_center/)
+#   2. Playwright available via local node_modules or npx
 
 set -euo pipefail
 
@@ -32,13 +32,24 @@ echo "    Base URL: $BASE_URL"
 echo "    Test dir: $FRONTEND_DIR/tests"
 echo ""
 
-# Check node_modules exist
-if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
-    echo "ERROR: node_modules not found. Run 'npm install' in $FRONTEND_DIR first."
-    exit 1
+# Resolve playwright binary: prefer local node_modules, fall back to npx
+PLAYWRIGHT_BIN=""
+if [ -x "$FRONTEND_DIR/node_modules/.bin/playwright" ]; then
+    PLAYWRIGHT_BIN="$FRONTEND_DIR/node_modules/.bin/playwright"
+elif command -v playwright &>/dev/null; then
+    PLAYWRIGHT_BIN="$(command -v playwright)"
+elif command -v npx &>/dev/null; then
+    # npx will use cached playwright or download it
+    PLAYWRIGHT_BIN="npx playwright"
+else
+    echo "WARN: Playwright not found (no local node_modules/.bin/playwright, no npx). Skipping UX gate."
+    exit 0
 fi
 
-# Check app is reachable
+echo "    Playwright: $PLAYWRIGHT_BIN"
+echo ""
+
+# Check app is reachable — skip non-blocking if not running
 if ! curl -sf --max-time 5 "$BASE_URL/api/status" > /dev/null 2>&1; then
     echo "WARN: App not reachable at $BASE_URL — skipping Playwright tests (not a gate failure in CI without app)."
     exit 0
@@ -47,9 +58,9 @@ fi
 # Run Playwright tests
 cd "$FRONTEND_DIR"
 PLAYWRIGHT_BASE_URL="$BASE_URL" \
-    ./node_modules/.bin/playwright test \
+    $PLAYWRIGHT_BIN test \
     --config=playwright.config.ts \
-    "$@"
+    "${@}"
 
 STATUS=$?
 
