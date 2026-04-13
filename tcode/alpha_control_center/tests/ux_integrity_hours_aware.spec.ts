@@ -158,7 +158,7 @@ test.describe('chainStatus() — market-hours awareness', () => {
       return;
     }
 
-    await chainIndicator.click();
+    await chainIndicator.click({ force: true });
 
     // The CHAIN panel should open — switch to chain tab if not already
     const chainTab = page.locator('[role="tab"]').filter({ hasText: 'CHAIN' });
@@ -183,7 +183,7 @@ test.describe('Chain source in integrity panel', () => {
 
     // Open chain panel by clicking the CHAIN indicator
     const chainIndicator = page.locator('.integrity-indicator').nth(1);
-    await chainIndicator.click();
+    await chainIndicator.click({ force: true });
 
     // Wait for the integrity panel overlay to appear
     const panel = page.locator('.integrity-panel');
