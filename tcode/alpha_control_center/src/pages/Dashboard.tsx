@@ -1731,11 +1731,7 @@ function fillWindowLabel(): string {
 
 const PendingOrderModal = ({ order, onClose }: { order: PendingOrder; onClose: () => void }) => {
     // Approximate rank breakdown for display (mirrors computeRank in subscriber.go).
-    const rankBreakdown = (() => {
-        if (order.rank == null) return null;
-        const conf = order.rank; // we don't have decomposed components, show total
-        return { total: order.rank };
-    })();
+    const rankBreakdown = order.rank != null ? { total: order.rank } : null;
 
     return (
         <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Pending Order Detail">
