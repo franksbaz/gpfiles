@@ -242,13 +242,42 @@ def get_open_orders(host: str, port: int, client_id: int) -> dict:
 
         orders = []
         for trade in ib.trades():
+            contract = trade.contract
+            order    = trade.order
+            # Parse option contract fields
+            strike      = 0.0
+            expiry      = ""
+            option_type = ""
+            limit_price = 0.0
+            if contract and contract.secType == "OPT":
+                try:
+                    strike = float(contract.strike or 0)
+                except (TypeError, ValueError):
+                    strike = 0.0
+                raw_expiry = contract.lastTradeDateOrContractMonth or ""
+                raw_expiry = raw_expiry.strip()
+                if len(raw_expiry) == 8 and raw_expiry.isdigit():
+                    expiry = f"{raw_expiry[:4]}-{raw_expiry[4:6]}-{raw_expiry[6:]}"
+                else:
+                    expiry = raw_expiry
+                option_type = "CALL" if getattr(contract, "right", "") == "C" else "PUT"
+            try:
+                limit_price = float(order.lmtPrice or 0)
+            except (TypeError, ValueError):
+                limit_price = 0.0
             orders.append({
-                "orderId":       trade.order.orderId,
-                "status":        trade.orderStatus.status or "Unknown",
-                "filled_qty":    float(trade.orderStatus.filled or 0),
+                "orderId":        trade.order.orderId,
+                "status":         trade.orderStatus.status or "Unknown",
+                "filled_qty":     float(trade.orderStatus.filled or 0),
                 "avg_fill_price": float(trade.orderStatus.avgFillPrice or 0),
-                "symbol":        trade.contract.symbol if trade.contract else "",
-                "timestamp":     _now_iso(),
+                "symbol":         contract.symbol if contract else "",
+                "action":         order.action if order else "",
+                "qty":            int(order.totalQuantity or 0) if order else 0,
+                "strike":         strike,
+                "expiry":         expiry,
+                "option_type":    option_type,
+                "limit_price":    limit_price,
+                "timestamp":      _now_iso(),
             })
 
         result = {"orders": orders}

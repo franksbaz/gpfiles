@@ -24,6 +24,14 @@ type OrderResult struct {
 	Timestamp    string  `json:"timestamp"`
 	ContractID   int     `json:"contract_id"`
 	Error        string  `json:"error,omitempty"`
+	// Contract fields — populated by the open_orders command.
+	Symbol     string  `json:"symbol,omitempty"`
+	Action     string  `json:"action,omitempty"`
+	Qty        int     `json:"qty,omitempty"`
+	Strike     float64 `json:"strike,omitempty"`
+	Expiry     string  `json:"expiry,omitempty"`
+	OptionType string  `json:"option_type,omitempty"`
+	LimitPrice float64 `json:"limit_price,omitempty"`
 }
 
 // pythonBin returns the path to the venv Python interpreter.

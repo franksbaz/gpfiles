@@ -11,6 +11,10 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+// Run all tests in this file on a single worker, in order, so that the
+// 30-second CPU-sampling session is not disrupted by sibling parallel tests.
+test.describe.configure({ mode: 'serial' });
+
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:2112';
 
 // Inject a Long Tasks observer into the page — must be called before navigation

@@ -1670,9 +1670,215 @@ const PositionModal = ({ pos, onClose }: { pos: IBKRPosition; onClose: () => voi
 };
 
 // ============================================================
-//  Column B: Trading Floor (IBKR live positions + sim fallback)
+//  Pending Orders — interface + components
 // ============================================================
-const TradingFloor = ({
+interface PendingOrder {
+    orderId: number;
+    status: string;
+    symbol: string;
+    action: string;
+    qty: number;
+    strike: number;
+    expiry: string;
+    option_type: string;
+    limit_price: number;
+    filled_qty: number;
+    avg_fill_price: number;
+    timestamp: string;
+}
+
+interface PendingOrdersResponse {
+    active: PendingOrder[];
+    cancelled: PendingOrder[];
+    source: string;
+    error?: string;
+}
+
+function orderLabel(o: PendingOrder): string {
+    const strike = o.strike > 0 ? `$${o.strike}` : '';
+    const type   = o.option_type ? o.option_type[0] : '';
+    const exp    = o.expiry || '';
+    return `${o.symbol} ${strike}${type} ${exp}`.trim();
+}
+
+function fillWindowLabel(): string {
+    const now = new Date();
+    const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: 'numeric', minute: 'numeric', hour12: false,
+        weekday: 'short',
+    });
+    const parts = fmt.formatToParts(now);
+    const h = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10);
+    const m = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10);
+    const wd = parts.find(p => p.type === 'weekday')?.value ?? '';
+    const t = h * 60 + m;
+    const isWeekend = ['Sat', 'Sun'].includes(wd);
+    const marketOpen = t >= 570 && t < 960; // 9:30–16:00 ET
+    if (marketOpen && !isWeekend) return 'fills next tick';
+    return 'fills next Monday 9:30 AM ET';
+}
+
+const PendingOrderModal = ({ order, onClose }: { order: PendingOrder; onClose: () => void }) => (
+    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Pending Order Detail">
+        <div className="modal-card fill-drill" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+                <span className="modal-title">⏳ PENDING ORDER #{order.orderId}</span>
+                <button className="modal-close" onClick={onClose} aria-label="Close pending order detail">✕</button>
+            </div>
+            <div className="fill-drill-body pending-order-modal-body">
+                <div className={`fill-pnl-banner ${order.status === 'Filled' ? 'win' : ''}`}
+                     style={{ background: 'rgba(139,92,246,0.12)', borderColor: 'rgba(139,92,246,0.4)' }}>
+                    <span className="fill-pnl-label" style={{ color: '#c9d1d9' }}>{order.action} {orderLabel(order)}</span>
+                    <span className="fill-pnl-value" style={{ color: '#e6a200' }}>{order.status}</span>
+                </div>
+                <div className="fill-section">
+                    <div className="fill-section-title">Order Detail</div>
+                    <div className="fill-grid">
+                        <div className="fill-row"><span>Order ID</span><span>#{order.orderId}</span></div>
+                        <div className="fill-row"><span>Status</span><span style={{ color: '#e6a200', fontWeight: 700 }}>{order.status}</span></div>
+                        <div className="fill-row"><span>Symbol</span><span>{order.symbol}</span></div>
+                        <div className="fill-row"><span>Action</span><span>{order.action}</span></div>
+                        <div className="fill-row"><span>Option Type</span><span>{order.option_type || '—'}</span></div>
+                        <div className="fill-row"><span>Strike</span><span>{order.strike > 0 ? `$${order.strike}` : '—'}</span></div>
+                        <div className="fill-row"><span>Expiry</span><span>{order.expiry || '—'}</span></div>
+                        <div className="fill-row"><span>Qty</span><span>{order.qty}</span></div>
+                        <div className="fill-row"><span>Limit Price</span><span>{order.limit_price > 0 ? formatUSD(order.limit_price) : '—'}</span></div>
+                        <div className="fill-row"><span>Filled Qty</span><span>{order.filled_qty}</span></div>
+                        <div className="fill-row"><span>Avg Fill Price</span><span>{order.avg_fill_price > 0 ? formatUSD(order.avg_fill_price) : '—'}</span></div>
+                        <div className="fill-row"><span>Submitted At</span><span>{order.timestamp ? new Date(order.timestamp).toLocaleString() : '—'}</span></div>
+                    </div>
+                </div>
+                <div className="fill-section">
+                    <div className="fill-section-title">Fill Window</div>
+                    <div style={{ fontSize: '0.78rem', color: '#58a6ff', padding: '4px 0' }}>{fillWindowLabel()}</div>
+                </div>
+                <div className="fill-section">
+                    <div className="fill-section-title">Raw IBKR State</div>
+                    <div className="raw-order-block">{JSON.stringify(order, null, 2)}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// ============================================================
+//  Column B: Pending Orders
+// ============================================================
+const PendingOrdersPanel = ({
+    orders,
+    source,
+}: {
+    orders: PendingOrdersResponse | null;
+    source: string;
+}) => {
+    const [selectedOrder, setSelectedOrder] = useState<PendingOrder | null>(null);
+    const [cancelledOpen, setCancelledOpen] = useState(false);
+
+    const active    = orders?.active    ?? [];
+    const cancelled = orders?.cancelled ?? [];
+    const hasError  = !!orders?.error;
+
+    return (
+        <>
+            {selectedOrder && (
+                <PendingOrderModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+            )}
+            <div className="dash-col card" role="region" aria-label="Pending Orders — queued IBKR orders">
+                <div className="section-header">
+                    <Tooltip text="Orders submitted to IBKR but not yet filled. Click any row for full state.">
+                        <span className="section-title" data-tooltip="Orders submitted to IBKR but not yet filled. Click any row for full state.">
+                            ⏳ PENDING ORDERS
+                        </span>
+                    </Tooltip>
+                    <div className="section-meta">
+                        <span className="inline-badge" aria-label={`${active.length} pending orders`}>{active.length}</span>
+                        {source && source !== 'SIMULATION' && (
+                            <span className="inline-badge" style={{ background: 'rgba(139,92,246,0.15)', color: '#a371f7' }}>
+                                {source.replace('IBKR_', '')}
+                            </span>
+                        )}
+                    </div>
+                </div>
+                <div className="scroll-col">
+                    {hasError && (
+                        <div className="empty-position-card">
+                            <div className="empty-position-icon" style={{ color: '#f85149' }}>⚠</div>
+                            <div style={{ color: '#f85149', fontSize: '0.72rem' }}>{orders!.error}</div>
+                        </div>
+                    )}
+                    {!hasError && active.length === 0 && (
+                        <div className="empty-position-card">
+                            <div className="empty-position-icon" style={{ color: '#8b949e' }}>📭</div>
+                            <div style={{ color: '#8b949e' }}>No pending orders</div>
+                        </div>
+                    )}
+                    {active.map(o => (
+                        <div
+                            key={o.orderId}
+                            className="pending-order-row"
+                            onClick={() => setSelectedOrder(o)}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Order #${o.orderId} — ${o.action} ${orderLabel(o)} — ${o.status}. Click for detail.`}
+                            onKeyDown={e => e.key === 'Enter' && setSelectedOrder(o)}
+                        >
+                            <div className="pending-order-top">
+                                <span>{o.action}</span>
+                                <Tooltip text={`${o.option_type || ''} ${o.strike > 0 ? `strike $${o.strike}` : ''} exp ${o.expiry}`}>
+                                    <span>{orderLabel(o)}</span>
+                                </Tooltip>
+                                <span className="pending-status-badge">{o.status}</span>
+                                <span className="pending-order-id">#{o.orderId}</span>
+                            </div>
+                            <div className="pending-order-detail">
+                                <span>×{o.qty}</span>
+                                {o.limit_price > 0 && <span>@ {formatUSD(o.limit_price)}</span>}
+                                {o.filled_qty > 0 && <span style={{ color: '#3fb950' }}>filled {o.filled_qty}</span>}
+                            </div>
+                            <div className="pending-fill-window">{fillWindowLabel()}</div>
+                        </div>
+                    ))}
+                    {cancelled.length > 0 && (
+                        <div className="cancelled-accordion">
+                            <div
+                                className="cancelled-accordion-header"
+                                onClick={() => setCancelledOpen(v => !v)}
+                                role="button"
+                                tabIndex={0}
+                                aria-expanded={cancelledOpen}
+                                aria-label={`Cancelled today — ${cancelled.length} orders. Click to ${cancelledOpen ? 'collapse' : 'expand'}.`}
+                                onKeyDown={e => e.key === 'Enter' && setCancelledOpen(v => !v)}
+                            >
+                                <span>Cancelled today ({cancelled.length})</span>
+                                <span style={{ transform: cancelledOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+                            </div>
+                            {cancelledOpen && cancelled.map((o, i) => (
+                                <div
+                                    key={`${o.orderId}-${i}`}
+                                    className="cancelled-order-row"
+                                    onClick={() => setSelectedOrder(o)}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`Cancelled: order #${o.orderId} ${orderLabel(o)}`}
+                                    onKeyDown={e => e.key === 'Enter' && setSelectedOrder(o)}
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    #{o.orderId} {o.action} {orderLabel(o)} — Cancelled
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </>
+    );
+};
+
+// ============================================================
+//  Column C: Trading Floor (IBKR live positions + sim fallback)
+// ============================================================
+const TradingFloor = ({  // Column C in 4-col grid
     portfolio,
     ibkrPositions,
     brokerStatus,
@@ -2725,6 +2931,7 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
     const [accountError, setAccountError] = useState<string | null>(null);
     const [accountLoading, setAccountLoading] = useState(true);
     const [ibkrPositions, setIBKRPositions] = useState<IBKRPosition[]>([]);
+    const [pendingOrders, setPendingOrders] = useState<PendingOrdersResponse | null>(null);
     const [simMode, setSimMode] = useState<string>('paper');
     const [scorecard, setScorecard] = useState<ModelScorecard[]>([]);
     const [scorecardLoading, setScorecardLoading] = useState(true);
@@ -2784,11 +2991,24 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
         setAccountLoading(false);
     }, []);
 
+    // Fetch pending IBKR orders (30s interval — subprocess is slow)
+    const fetchPendingOrders = useCallback(async () => {
+        try {
+            const r = await fetch('/api/orders/pending');
+            if (r.ok) setPendingOrders(await r.json() as PendingOrdersResponse);
+        } catch { /* ignore — endpoint unavailable or gateway down */ }
+    }, []);
+
     useEffect(() => {
         // Initial call handled by main stagger below
         const id = setInterval(fetchAccount, 10000);
         return () => clearInterval(id);
     }, [fetchAccount]);
+
+    useEffect(() => {
+        const id = setInterval(fetchPendingOrders, 30000);
+        return () => clearInterval(id);
+    }, [fetchPendingOrders]);
 
     // Fetch scorecard + loss summary (60s interval)
     const fetchScorecard = useCallback(async () => {
@@ -2935,11 +3155,12 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
     useEffect(() => {
         fetchAll();
         setTimeout(fetchAccount, 500);
+        setTimeout(fetchPendingOrders, 2000);
         setTimeout(fetchScorecard, 1500);
         setTimeout(fetchIntel, 3000);
         const id = setInterval(fetchAll, 3000);
         return () => clearInterval(id);
-    }, [fetchAll]);
+    }, [fetchAll, fetchPendingOrders]);
 
     return (
         <>
@@ -3011,13 +3232,17 @@ const Dashboard = ({ brokerStatus, integrityRed = false }: { brokerStatus: Broke
             {/* Data Provenance Panel — TV vs YF spot comparison */}
             <DataProvenancePanel audit={audit} />
 
-            {/* Zone 2: 3-Column Trading Grid */}
+            {/* Zone 2: 4-Column Trading Grid */}
             <div className="dashboard-grid">
                 <SignalCommand
                     signals={signals}
                     newTimestamps={newTimestamps}
                     onSelectSignal={setSelectedSignal}
                     systemState={systemState}
+                />
+                <PendingOrdersPanel
+                    orders={pendingOrders}
+                    source={pendingOrders?.source ?? ''}
                 />
                 <TradingFloor portfolio={portfolio} ibkrPositions={ibkrPositions} brokerStatus={brokerStatus} />
                 <ExecutionLog trades={trades} brokerStatus={brokerStatus} lossSummary={lossSummary} simMode={simMode} />

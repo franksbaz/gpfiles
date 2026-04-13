@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -42,6 +43,23 @@ type AlphaSignal struct {
 	ExecError   string `json:"exec_error,omitempty"`    // non-empty on failure
 }
 
+// orderState tracks the last-known status for a signal fingerprint so we can
+// suppress duplicate PlaceIBKROrder calls and log only on status transitions.
+type orderState struct {
+	OrderID int
+	Status  string
+}
+
+// activeStatuses is the set of IBKR statuses that mean an order is already
+// live at the broker.  A signal whose fingerprint matches one of these should
+// NOT trigger a new order submission.
+var activeStatuses = map[string]bool{
+	"PreSubmitted":  true,
+	"Submitted":     true,
+	"PendingSubmit": true,
+	"Filled":        true,
+}
+
 // SignalSubscriber listens for Alpha Engine broadcasts and triggers execution.
 type SignalSubscriber struct {
 	Conn       *nats.Conn
@@ -50,15 +68,34 @@ type SignalSubscriber struct {
 	Guard      *LiveCapitalGuard
 	Compliance *ComplianceGuard
 	Archive    *ArchiveSink
+
+	// orderFingerprints deduplicates signal → order calls.
+	// Key: "<strike>_<expiry>_<action>_<qty>"  Value: last-known orderState.
+	orderFingerprints   map[string]orderState
+	orderFingerprintsMu sync.Mutex
 }
 
 func NewSignalSubscriber(natsURL string, executor *IBKRExecutor, pricing *PricingEngine, guard *LiveCapitalGuard, compliance *ComplianceGuard, archive *ArchiveSink) *SignalSubscriber {
+	sub := &SignalSubscriber{
+		Executor:          executor,
+		Pricing:           pricing,
+		Guard:             guard,
+		Compliance:        compliance,
+		Archive:           archive,
+		orderFingerprints: make(map[string]orderState),
+	}
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Printf("NATS Connection Error: %v (Proceeding with offline mode for test)", err)
-		return &SignalSubscriber{Executor: executor, Pricing: pricing, Guard: guard, Compliance: compliance, Archive: archive}
+		return sub
 	}
-	return &SignalSubscriber{Conn: nc, Executor: executor, Pricing: pricing, Guard: guard, Compliance: compliance, Archive: archive}
+	sub.Conn = nc
+	return sub
+}
+
+// signalFingerprint returns a dedup key for a conviction signal.
+func signalFingerprint(ticker, optType, expiry, action string, strike float64, qty int) string {
+	return fmt.Sprintf("%s_%s_%s_%s_%.2f_%d", ticker, optType, expiry, action, strike, qty)
 }
 
 func (s *SignalSubscriber) Start() {
@@ -167,6 +204,21 @@ func (s *SignalSubscriber) Start() {
 			if absQty < 0 {
 				absQty = -absQty
 			}
+
+			// ── Dedup: skip if an order with the same fingerprint is already active ──
+			fp := signalFingerprint(ticker, sig.OptionType, sig.ExpirationDate, action, strike, absQty)
+			s.orderFingerprintsMu.Lock()
+			prev, exists := s.orderFingerprints[fp]
+			s.orderFingerprintsMu.Unlock()
+			if exists && activeStatuses[prev.Status] {
+				log.Printf("[SKIP] duplicate signal — orderId=%d status=%s fingerprint=%s",
+					prev.OrderID, prev.Status, fp)
+				sig.IBKROrderID = prev.OrderID
+				sig.ExecStatus = "submitted"
+				AddSignal(sig)
+				break
+			}
+
 			result, err := PlaceIBKROrder(contract, action, absQty, price)
 			if err != nil {
 				sig.ExecStatus = "failed"
@@ -177,12 +229,20 @@ func (s *SignalSubscriber) Start() {
 				return
 			}
 
+			// Record new fingerprint state.
+			s.orderFingerprintsMu.Lock()
+			s.orderFingerprints[fp] = orderState{OrderID: result.OrderID, Status: result.Status}
+			s.orderFingerprintsMu.Unlock()
+
 			sig.IBKROrderID = result.OrderID
 			sig.ExecStatus = "submitted"
 			AddSignal(sig)
 
-			log.Printf("IBKR ORDER PLACED: orderId=%d status=%s symbol=%s strike=%.2f expiry=%s price=%.4f qty=%d",
-				result.OrderID, result.Status, ticker, strike, sig.ExpirationDate, price, absQty)
+			// Log only when this is genuinely a new order (not a status repeat).
+			if !exists || prev.Status != result.Status {
+				log.Printf("IBKR ORDER PLACED: orderId=%d status=%s symbol=%s strike=%.2f expiry=%s price=%.4f qty=%d",
+					result.OrderID, result.Status, ticker, strike, sig.ExpirationDate, price, absQty)
+			}
 
 			// Record in trade log as a real broker order (not a simulated fill).
 			cost := float64(absQty) * price * 100

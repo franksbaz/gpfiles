@@ -220,41 +220,138 @@ type portfolioResponse struct {
 	Source string `json:"source"`
 }
 
+// ibkrPositionsToMap converts a raw []interface{} returned by
+// runIBKRAccount("positions") into the map[string]Position format that
+// portfolioResponse requires.  Fields that are missing or unparseable are
+// zero-valued rather than causing a panic.
+func ibkrPositionsToMap(raw interface{}) map[string]Position {
+	result := make(map[string]Position)
+	list, ok := raw.([]interface{})
+	if !ok {
+		return result
+	}
+	for _, item := range list {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		getString := func(k string) string {
+			v, _ := m[k].(string)
+			return v
+		}
+		getFloat := func(k string) float64 {
+			switch v := m[k].(type) {
+			case float64:
+				return v
+			case int:
+				return float64(v)
+			}
+			return 0
+		}
+		getInt := func(k string) int {
+			switch v := m[k].(type) {
+			case float64:
+				return int(v)
+			case int:
+				return v
+			}
+			return 0
+		}
+		ticker     := getString("ticker")
+		optType    := getString("option_type")
+		expiry     := getString("expiration")
+		strike     := getFloat("strike")
+		qty        := getInt("qty")
+		avgCost    := getFloat("avg_cost")
+		curPrice   := getFloat("current_price")
+		unrealPnL  := getFloat("unrealized_pnl")
+
+		sig := fmt.Sprintf("%s_%s_%s_%.2f", ticker, optType, expiry, strike)
+		result[sig] = Position{
+			Ticker:        ticker,
+			OptionType:    optType,
+			Strike:        strike,
+			Expiry:        expiry,
+			EntryPrice:    avgCost,
+			CurrentPrice:  curPrice,
+			Quantity:      qty,
+			UnrealizedPnL: unrealPnL,
+		}
+	}
+	return result
+}
+
 func (h *ConfigHandler) ServePortfolio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
-	h.Portfolio.mu.RLock()
-	resp := portfolioResponse{
-		NAV:               h.Portfolio.NAV,
-		Cash:              h.Portfolio.Cash,
-		RealizedPnL:       h.Portfolio.RealizedPnL,
-		MaintenanceMargin: h.Portfolio.MaintenanceMargin,
-		Positions:         h.Portfolio.Positions,
-		Source:            string(ActiveExecutionMode),
+	// ── SIMULATION mode: serve internal PaperPortfolio ────────────────────────
+	if ActiveExecutionMode == ModeSimulation {
+		h.Portfolio.mu.RLock()
+		resp := portfolioResponse{
+			NAV:               h.Portfolio.NAV,
+			Cash:              h.Portfolio.Cash,
+			RealizedPnL:       h.Portfolio.RealizedPnL,
+			MaintenanceMargin: h.Portfolio.MaintenanceMargin,
+			Positions:         h.Portfolio.Positions,
+			Source:            string(ModeSimulation),
+		}
+		h.Portfolio.mu.RUnlock()
+		json.NewEncoder(w).Encode(resp)
+		return
 	}
-	h.Portfolio.mu.RUnlock()
 
-	// In IBKR modes, override NAV/Cash with the most-recently-cached IBKR
-	// account values so /api/portfolio and /api/account agree on NAV.
-	// Positions detail is still from the internal fill tracker (which records
-	// every executed order) until Phase 3 full reconciliation.
-	if ActiveExecutionMode != ModeSimulation {
-		accountCacheMu.Lock()
-		cached := accountCache
-		accountCacheMu.Unlock()
-		if cached != nil {
-			if m, ok := cached.(map[string]interface{}); ok {
-				if nav, ok := m["net_liquidation"].(float64); ok && nav > 0 {
-					resp.NAV = nav
-				}
-				if cash, ok := m["cash_balance"].(float64); ok && cash > 0 {
-					resp.Cash = cash
-				}
-				if realized, ok := m["realized_pnl"].(float64); ok {
-					resp.RealizedPnL = realized
-				}
+	// ── IBKR modes: NAV/cash from account cache; positions from IBKR subprocess ─
+	resp := portfolioResponse{
+		Source:    string(ActiveExecutionMode),
+		Positions: make(map[string]Position),
+	}
+
+	// NAV / cash from cached account summary.
+	accountCacheMu.Lock()
+	cached := accountCache
+	accountCacheMu.Unlock()
+	if cached != nil {
+		if m, ok := cached.(map[string]interface{}); ok {
+			if nav, ok := m["net_liquidation"].(float64); ok && nav > 0 {
+				resp.NAV = nav
 			}
+			if cash, ok := m["cash_balance"].(float64); ok && cash > 0 {
+				resp.Cash = cash
+			}
+			if realized, ok := m["realized_pnl"].(float64); ok {
+				resp.RealizedPnL = realized
+			}
+		}
+	}
+
+	// Positions from IBKR subprocess.  Use positionsCache when fresh.
+	positionsCacheMu.Lock()
+	if positionsCache != nil && time.Since(positionsCachedAt) < accountCacheTTL {
+		rawPos := positionsCache
+		positionsCacheMu.Unlock()
+		resp.Positions = ibkrPositionsToMap(rawPos)
+	} else {
+		positionsCacheMu.Unlock()
+		rawPos, err := runIBKRAccount("positions")
+		if err != nil {
+			// Subprocess failed — return explicit error; never silently fall back.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":    err.Error(),
+				"source":   string(ActiveExecutionMode),
+				"nav":      resp.NAV,
+				"cash":     resp.Cash,
+				"positions": map[string]Position{},
+			})
+			return
+		}
+		// Only cache valid list results (not error dicts from Python).
+		if _, isMap := rawPos.(map[string]interface{}); !isMap {
+			positionsCacheMu.Lock()
+			positionsCache = rawPos
+			positionsCachedAt = time.Now()
+			positionsCacheMu.Unlock()
+			resp.Positions = ibkrPositionsToMap(rawPos)
 		}
 	}
 
@@ -1564,6 +1661,61 @@ func (h *ConfigHandler) ServeFills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(result)
+}
+
+// pendingActiveStatuses is the set of IBKR order statuses shown in the "active"
+// section of /api/orders/pending.
+var pendingActiveStatuses = map[string]bool{
+	"PreSubmitted":  true,
+	"Submitted":     true,
+	"PendingSubmit": true,
+}
+
+// ServeOrdersPending shells out to ibkr_order open_orders and returns two lists:
+//   - active: PreSubmitted / Submitted / PendingSubmit orders
+//   - cancelled: Cancelled orders (shown in the collapsed accordion)
+//
+// In SIMULATION mode it returns empty lists immediately.
+func (h *ConfigHandler) ServeOrdersPending(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if ActiveExecutionMode == ModeSimulation {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"active":    []OrderResult{},
+			"cancelled": []OrderResult{},
+			"source":    string(ModeSimulation),
+		})
+		return
+	}
+
+	orders, err := OpenIBKROrders()
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":     err.Error(),
+			"active":    []OrderResult{},
+			"cancelled": []OrderResult{},
+			"source":    string(ActiveExecutionMode),
+		})
+		return
+	}
+
+	active    := []OrderResult{}
+	cancelled := []OrderResult{}
+	for _, o := range orders {
+		switch {
+		case pendingActiveStatuses[o.Status]:
+			active = append(active, o)
+		case o.Status == "Cancelled":
+			cancelled = append(cancelled, o)
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"active":    active,
+		"cancelled": cancelled,
+		"source":    string(ActiveExecutionMode),
+	})
 }
 
 func (h *ConfigHandler) ServeSimReset(w http.ResponseWriter, r *http.Request) {
