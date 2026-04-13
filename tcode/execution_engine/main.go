@@ -73,14 +73,6 @@ func NewIBKRExecutor(initialBalance float64, compliance *ComplianceGuard) *IBKRE
 }
 
 func (e *IBKRExecutor) ExecuteOrder(ticker string, optType string, strike float64, expiry string, quantity int, midPrice float64) {
-	// In IBKR modes the internal simulator must not silently take over when the
-	// broker connection has failed.  Refuse and log clearly — no fallback.
-	if ActiveExecutionMode != ModeSimulation && IBKRConnFailed {
-		log.Printf("ORDER REFUSED: IBKR connection failed at startup — cannot execute in %s mode without broker. "+
-			"Restart with a working IBKR Gateway or set EXECUTION_MODE=SIMULATION.", ActiveExecutionMode)
-		return
-	}
-
 	direction := "BUY"
 	if quantity < 0 {
 		direction = "SELL"
@@ -174,13 +166,8 @@ func main() {
 	executor := NewIBKRExecutor(1000000.0, compliance)
 	log.Printf("Portfolio initialized: NAV=$%.2f Cash=$%.2f Positions=%d", executor.Portfolio.NAV, executor.Portfolio.Cash, len(executor.Portfolio.Positions))
 
-	// Setup Credential Management & Real Handshake (Task 3)
-	creds := &CredentialManager{}
-	os.Setenv("IBKR_USERNAME", "alpha_trader") // Mocking SOPS injection
-	os.Setenv("IBKR_PASSWORD", "bulletproof_pass")
-
 	// Setup External Alert Connectivity
-	bot := NewTelegramBot(creds.GetSecret("TELEGRAM_TOKEN"), creds.GetSecret("TELEGRAM_CHAT_ID"))
+	bot := NewTelegramBot(os.Getenv("TELEGRAM_TOKEN"), os.Getenv("TELEGRAM_CHAT_ID"))
 	guard := NewLiveCapitalGuard(10000.0, bot) // $10k Daily Loss Limit
 
 	// Setup Archive Sink (PostgreSQL)
@@ -262,23 +249,18 @@ func main() {
 		}
 	}()
 
-	// Connect to IBKR only in IBKR modes.  In SIMULATION mode the broker
-	// subsystem is not started and /api/account returns an explicit error.
+	// Order path: SIMULATION uses internal PaperPortfolio.
+	// IBKR_PAPER/IBKR_LIVE uses Python subprocess (ingestion/ibkr_order.py) per order.
+	// No persistent TCP connection is held by the Go engine — each subprocess
+	// opens and closes its own ib_insync connection using a unique client ID.
 	if ActiveExecutionMode == ModeSimulation {
-		log.Printf("SIMULATION mode: IBKR subsystem not started. /api/account will return error.")
+		log.Printf("SIMULATION mode: no broker subprocess — /api/account returns error.")
 	} else {
-		ibHost := envOrDefault("IBKR_HOST", "127.0.0.1")
-		ibPort := envIntOrDefault("IBKR_PORT", 4002) // IB Gateway paper default
-		ibCID := envIntOrDefault("IBKR_CLIENT_ID", 1)
-		log.Printf("IBKR client initialized: host=%s port=%d clientId=%d", ibHost, ibPort, ibCID)
-		ibClient := NewIBKRClient(ibHost, ibPort, ibCID)
-		if err := ibClient.Connect(); err != nil {
-			IBKRConnFailed = true
-			log.Printf("[HALT] IBKR connection FAILED in %s mode: %v — new-trade submission is blocked. "+
-				"Fix IB Gateway connectivity or restart with EXECUTION_MODE=SIMULATION.", ActiveExecutionMode, err)
-		} else {
-			log.Printf("IBKR connection established for mode %s.", ActiveExecutionMode)
-		}
+		log.Printf("IBKR order path: subprocess via ingestion/ibkr_order.py "+
+			"(host=%s port=%s mode=%s)",
+			envOrDefault("IBKR_HOST", "127.0.0.1"),
+			envOrDefault("IBKR_PORT", "4002"),
+			ActiveExecutionMode)
 	}
 
 	subscriber.Start()

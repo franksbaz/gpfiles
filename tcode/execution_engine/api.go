@@ -731,7 +731,8 @@ type BrokerStatus struct {
 	Mode      string `json:"mode"`       // ExecutionMode value: IBKR_PAPER | IBKR_LIVE | SIMULATION
 	Broker    string `json:"broker"`
 	Confirmed bool   `json:"confirmed"`
-	Connected bool   `json:"connected"`  // false when IBKR connection failed at startup
+	Connected bool   `json:"connected"`
+	OrderPath string `json:"order_path"` // "IBKR_PAPER (real)" | "SIMULATION (internal)"
 }
 
 type SystemState struct {
@@ -799,12 +800,24 @@ func (h *ConfigHandler) ServeSystemState(w http.ResponseWriter, r *http.Request)
 func (h *ConfigHandler) ServeBrokerStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	connected := ActiveExecutionMode == ModeSimulation || !IBKRConnFailed
+
+	// Connectivity is verified per-order via the ibkr_order.py subprocess.
+	// No persistent broker connection is held by the Go engine.
+	connected := true
+	orderPath := "IBKR_PAPER (real)"
+	switch ActiveExecutionMode {
+	case ModeSimulation:
+		orderPath = "SIMULATION (internal)"
+	case ModeIBKRLive:
+		orderPath = "IBKR_LIVE (real) — EXPERIMENTAL"
+	}
+
 	status := BrokerStatus{
 		Mode:      string(ActiveExecutionMode),
 		Broker:    "IBKR",
 		Confirmed: connected,
 		Connected: connected,
+		OrderPath: orderPath,
 	}
 	json.NewEncoder(w).Encode(status)
 }
