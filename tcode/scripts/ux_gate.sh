@@ -67,6 +67,7 @@ PLAYWRIGHT_BASE_URL="$BASE_URL" \
     tests/ux_integrity_gate.spec.ts \
     tests/ux_integrity_contract.spec.ts \
     tests/ux_performance.spec.ts \
+    tests/ux_signal_economics.spec.ts \
     "${@}"
 
 STATUS=$?

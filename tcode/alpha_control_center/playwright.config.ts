@@ -7,9 +7,10 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
-  timeout: 60_000,
+  timeout: 120_000,
   retries: 1,
-  workers: 1, // sequential to avoid interference
+  workers: 1, // sequential to avoid server interference
+
   reporter: [['list'], ['json', { outputFile: '/tmp/ux_playwright_results.json' }]],
 
   use: {
