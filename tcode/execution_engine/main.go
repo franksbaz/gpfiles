@@ -21,10 +21,27 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+func envOrDefault(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
+
+func envIntOrDefault(k string, d int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return d
+}
 
 // PricingEngine wraps the C-based Black-Scholes implementation.
 type PricingEngine struct{}
@@ -250,7 +267,11 @@ func main() {
 	if ActiveExecutionMode == ModeSimulation {
 		log.Printf("SIMULATION mode: IBKR subsystem not started. /api/account will return error.")
 	} else {
-		ibClient := NewIBKRClient("127.0.0.1", 7497, 1)
+		ibHost := envOrDefault("IBKR_HOST", "127.0.0.1")
+		ibPort := envIntOrDefault("IBKR_PORT", 4002) // IB Gateway paper default
+		ibCID := envIntOrDefault("IBKR_CLIENT_ID", 1)
+		log.Printf("IBKR client initialized: host=%s port=%d clientId=%d", ibHost, ibPort, ibCID)
+		ibClient := NewIBKRClient(ibHost, ibPort, ibCID)
 		if err := ibClient.Connect(); err != nil {
 			IBKRConnFailed = true
 			log.Printf("[HALT] IBKR connection FAILED in %s mode: %v — new-trade submission is blocked. "+
