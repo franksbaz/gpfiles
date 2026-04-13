@@ -8,6 +8,8 @@ import json
 import nats
 import random
 import time
+from ib_insync import util as ib_util
+ib_util.patchAsyncio()  # allow ib.connect() from within a running event loop
 from datetime import date as _date
 from prometheus_client import start_http_server, Counter, Gauge, Histogram
 from consensus import ModelSignal, SignalDirection, ModelType, compute_expiry
@@ -265,7 +267,7 @@ async def broadcast_loop():
         _ibkr = get_ibkr_feed()
         _ibkr_ok = _ibkr.connect()
         if _ibkr_ok:
-            print("[IBKR] Connected to IB Gateway (paper trading, port 7497)")
+            print("[IBKR] Connected to IB Gateway (paper trading, port 4002)")
         else:
             print("[IBKR] IB Gateway not available — falling back to TV/YF feeds")
     except Exception as _ibkr_exc:
