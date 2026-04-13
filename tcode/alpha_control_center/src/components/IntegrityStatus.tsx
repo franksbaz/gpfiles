@@ -27,6 +27,7 @@ interface IntegrityData {
     mode: string;
     connected: boolean;
     signals_rejected_commission: number;
+    order_path: string | null;
   };
 }
 
@@ -257,6 +258,16 @@ const IntegrityPanel = ({ data, loading, onClose, openSection }: PanelProps) => 
                     <td style={{ fontFamily: 'monospace', fontSize: '11px' }}>{data.execution.nav_checksum || <span className="integrity-na">—</span>}</td>
                   </tr>
                   <tr>
+                    <td>Order Path</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+                      {data.execution.order_path
+                        ? <span style={{ color: data.execution.order_path.includes('real') ? '#3fb950' : '#79c0ff' }}>
+                            {data.execution.order_path}
+                          </span>
+                        : <span className="integrity-na">—</span>}
+                    </td>
+                  </tr>
+                  <tr>
                     <td>
                       <span title="Signals suppressed in this session because round-trip IBKR commissions would exceed the profit at the take-profit price.">
                         Signals Rejected (commission)
@@ -348,6 +359,7 @@ const IntegrityStatus = ({ onStatusChange }: IntegrityStatusProps) => {
           mode: broker?.mode ?? 'SIMULATION',
           connected: broker?.connected ?? false,
           signals_rejected_commission: pubMetrics?.signals_rejected_commission_total ?? 0,
+          order_path: broker?.order_path ?? null,
         },
       };
 

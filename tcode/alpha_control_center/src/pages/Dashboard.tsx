@@ -32,6 +32,9 @@ interface Signal {
     spot_sources?: { tv?: number; yf?: number; divergence_pct?: number };
     confidence_rationale?: string;
     ticker?: string;
+    ibkr_order_id?: number;
+    exec_status?: string;    // "submitted" | "failed" | "sim_filled" | "rejected"
+    exec_error?: string;
 }
 
 interface BrokerStatus {
@@ -662,6 +665,35 @@ const SignalModal = ({ signal, onClose }: { signal: Signal; onClose: () => void 
                             <span className="modal-key">Rationale</span>
                             <span className="modal-val" style={{ fontSize: '12px', lineHeight: '1.4', color: '#c9d1d9' }}>
                                 {signal.confidence_rationale}
+                            </span>
+                        </div>
+                    )}
+                    {signal.exec_status && (
+                        <div className="modal-row full-width">
+                            <span className="modal-key">Order Status</span>
+                            <span className="modal-val" style={{
+                                fontFamily: 'monospace',
+                                fontWeight: 700,
+                                color: signal.exec_status === 'failed' || signal.exec_status === 'rejected'
+                                    ? '#f85149'
+                                    : signal.exec_status === 'submitted'
+                                    ? '#3fb950'
+                                    : '#79c0ff',
+                            }}>
+                                {signal.exec_status.toUpperCase()}
+                                {signal.exec_error && (
+                                    <span style={{ fontWeight: 400, marginLeft: '8px', color: '#f85149', fontSize: '11px' }}>
+                                        — {signal.exec_error}
+                                    </span>
+                                )}
+                            </span>
+                        </div>
+                    )}
+                    {signal.ibkr_order_id != null && signal.ibkr_order_id > 0 && (
+                        <div className="modal-row">
+                            <span className="modal-key">IBKR Order ID</span>
+                            <span className="modal-val" style={{ fontFamily: 'monospace', color: '#3fb950', fontWeight: 700 }}>
+                                #{signal.ibkr_order_id}
                             </span>
                         </div>
                     )}
