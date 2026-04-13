@@ -9,7 +9,8 @@ export default defineConfig({
   testDir: './tests',
   timeout: 120_000,
   retries: 1,
-  workers: 1, // sequential to avoid server interference
+  fullyParallel: true,
+  workers: process.env.CI ? 2 : 4,
 
   reporter: [['list'], ['json', { outputFile: '/tmp/ux_playwright_results.json' }]],
 
