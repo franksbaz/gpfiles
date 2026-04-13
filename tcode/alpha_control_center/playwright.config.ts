@@ -10,7 +10,7 @@ export default defineConfig({
   timeout: 120_000,
   retries: 1,
   fullyParallel: true,
-  workers: process.env.CI ? 2 : 4,
+  workers: process.env.CI ? 1 : 2,
 
   reporter: [['list'], ['json', { outputFile: '/tmp/ux_playwright_results.json' }]],
 
