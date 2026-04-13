@@ -1233,3 +1233,90 @@
     transition: background 0.15s;
 }
 .ibkr-retry-btn:hover { background: #30363d; }
+
+/* ── Signal Economics Row (signal card) ──────────────────────────────────────── */
+.signal-economics-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    padding: 0.4rem 0 0.25rem;
+    border-top: 1px solid #21262d;
+    margin-top: 0.35rem;
+    font-size: 0.68rem;
+    font-family: 'Courier New', monospace;
+}
+.econ-pill {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    cursor: help;
+    white-space: nowrap;
+}
+.econ-pill-key {
+    color: #484f58;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.62rem;
+}
+.econ-pill-val {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.econ-pill-val.green  { color: #3fb950; }
+.econ-pill-val.red    { color: #f85149; }
+.econ-pill-val.amber  { color: #d29922; }
+.econ-pill-val.neutral { color: #79c0ff; }
+.econ-pill-val.na     { color: #484f58; font-style: italic; }
+
+/* ── Trade Economics Section (signal modal) ──────────────────────────────────── */
+.trade-economics-section {
+    border-top: 1px solid #21262d;
+    padding: 0.6rem 0.6rem 0.4rem;
+}
+.trade-economics-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #58a6ff;
+    margin-bottom: 0.5rem;
+}
+.econ-block {
+    margin-bottom: 0.5rem;
+}
+.econ-block-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8b949e;
+    margin-bottom: 0.3rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid #21262d;
+}
+.econ-ledger-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    padding: 0.2rem 0;
+    font-family: 'Courier New', monospace;
+}
+.econ-ledger-row span:first-child { color: #8b949e; padding-right: 0.5rem; }
+.econ-ledger-row span:last-child  { font-weight: 600; color: #e6edf3; font-variant-numeric: tabular-nums; }
+.econ-ledger-row.green span:last-child { color: #3fb950; }
+.econ-ledger-row.red span:last-child   { color: #f85149; }
+.econ-ledger-row.bold span { font-weight: 700; color: #c9d1d9; }
+.econ-na-notice {
+    font-size: 0.72rem;
+    color: #484f58;
+    font-style: italic;
+    padding: 0.5rem 0;
+}
+.econ-source-note {
+    font-size: 0.65rem;
+    color: #484f58;
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid #21262d;
+    line-height: 1.5;
+}

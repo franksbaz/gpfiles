@@ -4,6 +4,7 @@ import Tooltip from '../components/Tooltip';
 import TradingViewWidget from '../components/TradingViewWidget';
 import SystemMonitor from '../components/SystemMonitor';
 import { SkeletonCard, SkeletonTable } from '../components/SkeletonLoader';
+import { computeEconomics, formatRR, rrColorClass } from '../lib/signal_economics';
 
 // ============================================================
 //  Types
@@ -716,6 +717,158 @@ const SignalModal = ({ signal, onClose }: { signal: Signal; onClose: () => void 
                     {contractExplanation(signal)}
                 </div>
 
+                {/* ── Trade Economics section ──────────────────────── */}
+                {(() => {
+                    const eco = computeEconomics(signal);
+                    const ts = new Date(signal.timestamp * 1000).toLocaleString();
+                    if (eco.is_na) {
+                        return (
+                            <div className="trade-economics-section">
+                                <div className="trade-economics-title">💰 TRADE ECONOMICS</div>
+                                <div className="econ-na-notice"
+                                     data-tooltip={eco.na_reason}>
+                                    Max profit: N/A ({eco.na_reason})
+                                </div>
+                            </div>
+                        );
+                    }
+                    const fmtUSD = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+                    const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+                    const rrCls = rrColorClass(eco.risk_reward_ratio);
+                    return (
+                        <div className="trade-economics-section">
+                            <div className="trade-economics-title">💰 TRADE ECONOMICS</div>
+
+                            {/* Entry block */}
+                            <div className="econ-block">
+                                <div className="econ-block-label">Entry</div>
+                                <div className="econ-ledger-row">
+                                    <span
+                                        data-tooltip={`Premium: ${fmtUSD(signal.target_limit_price)} × ${signal.quantity} contracts × 100 multiplier`}>
+                                        Premium
+                                    </span>
+                                    <span data-tooltip={`${fmtUSD(signal.target_limit_price)} × ${signal.quantity} × 100`}>
+                                        {fmtUSD(signal.target_limit_price * 100 * signal.quantity)}
+                                    </span>
+                                </div>
+                                <div className="econ-ledger-row">
+                                    <span
+                                        data-tooltip={`IBKR Pro: max($${(0.65).toFixed(2)} × ${signal.quantity} contracts, $1.00 min) per leg`}>
+                                        Open commission
+                                    </span>
+                                    <span data-tooltip={`max($0.65 × ${signal.quantity}, $1.00) = ${fmtUSD(eco.commission_open)}`}>
+                                        {fmtUSD(eco.commission_open)}
+                                    </span>
+                                </div>
+                                {eco.cost_basis > 0 && (
+                                    <div className="econ-ledger-row bold">
+                                        <span data-tooltip="Premium + open commission = total cash at risk">Cost basis</span>
+                                        <span>{fmtUSD(eco.cost_basis)}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* At Take Profit */}
+                            <div className="econ-block">
+                                <div className="econ-block-label">At Take Profit ({fmtUSD(signal.take_profit_price)})</div>
+                                <div className="econ-ledger-row green">
+                                    <span
+                                        data-tooltip={`(${fmtUSD(signal.take_profit_price)} - ${fmtUSD(signal.target_limit_price)}) × ${signal.quantity} × 100`}>
+                                        Gross profit
+                                    </span>
+                                    <span>{fmtUSD(eco.gross_profit_at_tp)}</span>
+                                </div>
+                                <div className="econ-ledger-row">
+                                    <span
+                                        data-tooltip={`Round-trip commission: open (${fmtUSD(eco.commission_open)}) + close (${fmtUSD(eco.commission_close)})`}>
+                                        Round-trip commission
+                                    </span>
+                                    <span>{fmtUSD(eco.round_trip_commission)}</span>
+                                </div>
+                                <div className="econ-ledger-row green bold">
+                                    <span data-tooltip="Gross profit minus round-trip commissions">Net profit</span>
+                                    <span data-testid="econ-max-profit">{fmtUSD(eco.max_profit_at_tp)}</span>
+                                </div>
+                                {eco.cost_basis > 0 && (
+                                    <div className="econ-ledger-row">
+                                        <span data-tooltip="Net profit ÷ cost basis">Return on cost basis</span>
+                                        <span>{fmtPct(eco.return_on_cost_basis_tp)}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* At Stop Loss */}
+                            <div className="econ-block">
+                                <div className="econ-block-label">At Stop Loss ({fmtUSD(signal.stop_loss_price)})</div>
+                                <div className="econ-ledger-row red">
+                                    <span
+                                        data-tooltip={`(${fmtUSD(signal.target_limit_price)} - ${fmtUSD(signal.stop_loss_price)}) × ${signal.quantity} × 100`}>
+                                        Gross loss
+                                    </span>
+                                    <span>−{fmtUSD(eco.gross_loss_at_sl)}</span>
+                                </div>
+                                <div className="econ-ledger-row">
+                                    <span data-tooltip="Commission paid on both legs">Round-trip commission</span>
+                                    <span>{fmtUSD(eco.round_trip_commission)}</span>
+                                </div>
+                                <div className="econ-ledger-row red bold">
+                                    <span data-tooltip="Gross loss plus round-trip commissions">Net loss</span>
+                                    <span data-testid="econ-max-loss">−{fmtUSD(eco.max_loss_at_sl)}</span>
+                                </div>
+                                {eco.cost_basis > 0 && (
+                                    <div className="econ-ledger-row">
+                                        <span data-tooltip="Net loss ÷ cost basis">Return on cost basis</span>
+                                        <span style={{ color: '#f85149' }}>{fmtPct(eco.return_on_cost_basis_sl)}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Summary */}
+                            <div className="econ-block">
+                                <div className="econ-block-label">Summary</div>
+                                <div className="econ-ledger-row">
+                                    <span
+                                        data-tooltip={`entry + round_trip_commission / qty / 100 = ${fmtUSD(signal.target_limit_price)} + ${fmtUSD(eco.round_trip_commission)} / ${signal.quantity} / 100`}>
+                                        Breakeven
+                                    </span>
+                                    <span data-testid="econ-breakeven" className="neutral" style={{ color: '#79c0ff' }}>
+                                        {fmtUSD(eco.breakeven)}
+                                    </span>
+                                </div>
+                                <div className="econ-ledger-row">
+                                    <span
+                                        data-tooltip={`net_profit / net_loss = ${fmtUSD(eco.max_profit_at_tp)} / ${fmtUSD(eco.max_loss_at_sl)} — per $1 risked, ${fmtUSD(eco.risk_reward_ratio)} expected at TP`}>
+                                        Risk : Reward
+                                    </span>
+                                    <span data-testid="econ-rr"
+                                          style={{ color: rrCls === 'green' ? '#3fb950' : rrCls === 'amber' ? '#d29922' : '#f85149' }}>
+                                        {formatRR(eco.risk_reward_ratio)}
+                                    </span>
+                                </div>
+                                {eco.theoretical_max_profit === 'unlimited' ? (
+                                    <div className="econ-ledger-row">
+                                        <span data-tooltip="Long call: profit unlimited as underlying rises">Theoretical max</span>
+                                        <span style={{ color: '#3fb950' }}>∞ unlimited</span>
+                                    </div>
+                                ) : eco.theoretical_max_profit > 0 && (
+                                    <div className="econ-ledger-row">
+                                        <span data-tooltip="Long put: bounded by underlying going to zero">Theoretical max</span>
+                                        <span style={{ color: '#3fb950' }}>{fmtUSD(eco.theoretical_max_profit as number)}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="econ-source-note">
+                                <span data-tooltip="IBKR Pro tiered: $0.65/contract, $1.00 minimum per leg, 2 legs for long options">
+                                    Source: IBKR Pro · $0.65/contract · $1 min/leg · {signal.is_spread ? '4' : '2'} legs round-trip
+                                </span>
+                                <br />
+                                <span style={{ color: '#30363d' }}>Signal timestamp: {ts}</span>
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 {/* ── Data Provenance section ──────────────────────── */}
                 <div className="modal-provenance">
                     <div className="modal-provenance-title">🔗 DATA PROVENANCE</div>
@@ -1340,6 +1493,69 @@ const SignalCommand = ({
                                         </div>
                                     )}
                                 </div>
+                                {/* ── Economics row ─────────────── */}
+                                {(() => {
+                                    const eco = computeEconomics(s);
+                                    const fmtC = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                                    const fmtPrice = (n: number) => `$${n.toFixed(3)}`;
+                                    const rrCls = rrColorClass(eco.risk_reward_ratio);
+                                    if (eco.is_na) {
+                                        return (
+                                            <div className="signal-economics-row">
+                                                <span className="econ-pill">
+                                                    <span className="econ-pill-key">Economics</span>
+                                                    <Tooltip text={eco.na_reason ?? 'Cannot compute'}>
+                                                        <span className="econ-pill-val na" data-tooltip={eco.na_reason}>N/A</span>
+                                                    </Tooltip>
+                                                </span>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div className="signal-economics-row" data-testid="signal-economics-row">
+                                            <span className="econ-pill">
+                                                <span className="econ-pill-key">Max Profit</span>
+                                                <Tooltip text={`Net profit at TP ${s.take_profit_price}: (TP - entry) × qty × 100 - round-trip commission`}>
+                                                    <span className="econ-pill-val green"
+                                                          data-tooltip={`(${s.take_profit_price} - ${s.target_limit_price}) × ${s.quantity} × 100 - ${eco.round_trip_commission.toFixed(2)}`}
+                                                          data-testid="card-max-profit">
+                                                        {fmtC(eco.max_profit_at_tp)} (at ${s.take_profit_price})
+                                                    </span>
+                                                </Tooltip>
+                                            </span>
+                                            <span className="econ-pill">
+                                                <span className="econ-pill-key">Max Loss</span>
+                                                <Tooltip text={`Net loss at SL ${s.stop_loss_price}: (entry - SL) × qty × 100 + round-trip commission`}>
+                                                    <span className="econ-pill-val red"
+                                                          data-tooltip={`(${s.target_limit_price} - ${s.stop_loss_price}) × ${s.quantity} × 100 + ${eco.round_trip_commission.toFixed(2)}`}
+                                                          data-testid="card-max-loss">
+                                                        {fmtC(eco.max_loss_at_sl)} (at ${s.stop_loss_price})
+                                                    </span>
+                                                </Tooltip>
+                                            </span>
+                                            <span className="econ-pill">
+                                                <span className="econ-pill-key">R:R</span>
+                                                <Tooltip text={`Risk:Reward = net_profit / net_loss = ${eco.max_profit_at_tp.toFixed(2)} / ${eco.max_loss_at_sl.toFixed(2)}`}>
+                                                    <span className={`econ-pill-val ${rrCls}`}
+                                                          data-tooltip={`Per $1 risked, $${eco.risk_reward_ratio.toFixed(2)} expected at TP`}
+                                                          data-testid="card-rr">
+                                                        {formatRR(eco.risk_reward_ratio)}
+                                                    </span>
+                                                </Tooltip>
+                                            </span>
+                                            <span className="econ-pill">
+                                                <span className="econ-pill-key">Breakeven</span>
+                                                <Tooltip text={`entry + round_trip_commission / qty / 100 = ${s.target_limit_price} + ${eco.round_trip_commission.toFixed(2)} / ${s.quantity} / 100`}>
+                                                    <span className="econ-pill-val neutral"
+                                                          data-tooltip={`entry (${s.target_limit_price}) + commission spread (${(eco.round_trip_commission / s.quantity / 100).toFixed(4)})`}
+                                                          data-testid="card-breakeven">
+                                                        {fmtPrice(eco.breakeven)}
+                                                    </span>
+                                                </Tooltip>
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
                                 <div className="signal-bottom-row">
                                     <span className="signal-time">
                                         {new Date(s.timestamp * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
