@@ -62,8 +62,9 @@ function chainStatus(data: IntegrityData['chain']): TrafficLight {
 }
 
 function executionStatus(data: IntegrityData['execution']): TrafficLight {
-  if (!data.connected && data.mode !== 'simulation') return 'amber';
-  if (data.mode === 'live' && !data.broker_confirmed) return 'red';
+  const mode = (data.mode || '').toUpperCase();
+  if (!data.connected && mode !== 'SIMULATION') return 'amber';
+  if (mode === 'IBKR_LIVE' && !data.broker_confirmed) return 'red';
   return 'green';
 }
 

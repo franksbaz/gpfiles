@@ -65,6 +65,7 @@ PLAYWRIGHT_BASE_URL="$BASE_URL" \
     tests/ux_tooltip_no_clip.spec.ts \
     tests/ux_tooltip_visibility.spec.ts \
     tests/ux_integrity_gate.spec.ts \
+    tests/ux_integrity_contract.spec.ts \
     tests/ux_performance.spec.ts \
     "${@}"
 

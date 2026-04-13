@@ -1358,6 +1358,7 @@ type DataAuditResponse struct {
 	OptionsChainSrc   string                 `json:"options_chain_source"`
 	LastChainFetch    string                 `json:"last_chain_fetch"`
 	ChainAgeSec       float64                `json:"chain_age_sec"`
+	ChainEntryCount   int                    `json:"chain_entry_count"`
 	TVFeedOK          bool                   `json:"tv_feed_ok"`
 	YFFeedOK          bool                   `json:"yf_feed_ok"`
 	IBKRConnected     bool                   `json:"ibkr_connected"`
@@ -1424,11 +1425,16 @@ func (h *ConfigHandler) ServeDataAudit(w http.ResponseWriter, r *http.Request) {
 		chainSrc = "yfinance"
 	}
 
+	chainPriceCacheMu.Lock()
+	chainEntryCount := len(chainPriceCache)
+	chainPriceCacheMu.Unlock()
+
 	resp := DataAuditResponse{
 		SpotValidation:  spotValidation,
 		OptionsChainSrc: chainSrc,
 		LastChainFetch:  dataAuditFetched.UTC().Format(time.RFC3339),
 		ChainAgeSec:     time.Since(dataAuditFetched).Seconds(),
+		ChainEntryCount: chainEntryCount,
 		TVFeedOK:        tvOK,
 		YFFeedOK:        yfOK,
 		IBKRConnected:   ibkrConnected,
