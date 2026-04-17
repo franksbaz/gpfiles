@@ -360,6 +360,7 @@ export default function PositionManager() {
                   data-testid={`close-btn-${pos.trade_id}`}
                   disabled={closing.has(pos.trade_id)}
                   onClick={() => handleClose(pos.trade_id)}
+                  aria-label={`Close position ${pos.trade_id} at market`}
                 >
                   {closing.has(pos.trade_id) ? 'Closing…' : 'Close Now'}
                 </button>
