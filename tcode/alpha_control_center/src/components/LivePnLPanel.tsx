@@ -358,7 +358,7 @@ const LivePnLPanel: React.FC = () => {
                     <td className={`td-pnl ${s.net_pnl >= 0 ? 'pos' : 'neg'}`}>
                       {s.net_pnl >= 0 ? '+' : ''}{s.net_pnl.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
                     </td>
-                    <td>{s.win_rate.toFixed(0)}%</td>
+                    <td>{(s.win_rate ?? 0).toFixed(0)}%</td>
                   </tr>
                 ))}
               </tbody>

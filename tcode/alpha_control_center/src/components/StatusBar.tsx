@@ -349,14 +349,14 @@ const StatusBar: React.FC<Props> = ({
           </button>
 
           {showStratDrop && (
-            <div className="sb-strategy-dropdown" role="listbox" aria-label="Strategy options">
+            <div className="sb-strategy-dropdown" role="listbox" aria-label="Strategy options" data-testid="strategy-dropdown">
               {STRATEGIES.map(s => (
                 <button
                   key={s.key}
                   className={`sb-strat-opt ${strategy === s.key ? 'active' : ''}`}
                   role="option"
                   aria-selected={strategy === s.key}
-                  data-testid={`strategy-opt-${s.key.toLowerCase()}`}
+                  data-testid="strategy-option"
                   onClick={() => handleSelectStrategy(s.key)}
                 >
                   {s.emoji} {s.label}

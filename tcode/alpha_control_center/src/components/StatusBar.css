@@ -215,9 +215,9 @@ span.sb-chip:hover {
   color: #FFB300;
 }
 .sb-mode-badge.paper {
-  background: rgba(0,200,83,0.1);
-  border-color: #00C853;
-  color: #00C853;
+  background: rgba(88,166,255,0.1);
+  border-color: rgba(88,166,255,0.3);
+  color: #58a6ff;
 }
 .sb-disconnected-dot {
   font-size: 0.8em;

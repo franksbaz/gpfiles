@@ -14,7 +14,7 @@
  * - Color law: #00C853 = profit ONLY, #FF1744 = loss ONLY
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import './TabbedReferencePanel.css';
 import TermLabel from './TermLabel';
 
@@ -237,8 +237,8 @@ const MacroTab: React.FC<{ intel: IntelData | null }> = ({ intel }) => {
           {options_flow && (
             <div className="tab-stat-row">
               <span className="tab-stat-label"><TermLabel term="PUT_CALL_RATIO">P/C Ratio</TermLabel></span>
-              <span className={`tab-pc-badge ${options_flow.pc_signal.toLowerCase()}`}>
-                {options_flow.pc_ratio.toFixed(2)} {options_flow.pc_signal}
+              <span className={`tab-pc-badge ${options_flow.pc_signal?.toLowerCase() ?? ''}`}>
+                {options_flow.pc_ratio != null ? options_flow.pc_ratio.toFixed(2) : '—'} {options_flow.pc_signal}
               </span>
             </div>
           )}
@@ -654,6 +654,8 @@ const TabbedReferencePanel: React.FC = () => {
             aria-selected={activeTab === tab.id}
             aria-controls={`tabpanel-${tab.id}`}
             data-testid={`tab-${tab.id}`}
+            title={tab.title}
+            aria-label={tab.title}
             onClick={() => handleTabClick(tab.id)}
           >
             {tab.label}
@@ -678,4 +680,4 @@ const TabbedReferencePanel: React.FC = () => {
   );
 };
 
-export default TabbedReferencePanel;
+export default memo(TabbedReferencePanel);

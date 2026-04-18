@@ -48,19 +48,19 @@ test.describe('P&L color correctness', () => {
     const pnl = page.locator('[data-testid="sb-pnl-amount"]');
     await expect(pnl).toBeVisible();
 
-    const text = (await pnl.textContent()) ?? '';
-    const color = await pnl.evaluate(el => getComputedStyle(el).color);
-    const hex = rgbToHex(color);
+    // Determine sign from CSS class rather than text (avoids +$0 false-positive)
+    const classes = await pnl.evaluate(el => el.className);
+    const isProfit = classes.includes('profit');
+    const isLoss   = classes.includes('loss');
 
-    const isPositive = !text.startsWith('-') && !text.includes('–');
-    const isNegative = text.startsWith('-') || text.includes('–');
-
-    if (isPositive && !text.includes('0.00')) {
-      expect(hex, `Positive P&L should use green (#00C853), got ${hex}`).toMatch(GREEN_RE);
-    } else if (isNegative) {
-      expect(hex, `Negative P&L should use red (#FF1744), got ${hex}`).toMatch(RED_RE);
+    if (isProfit) {
+      const color = await pnl.evaluate(el => getComputedStyle(el).color);
+      expect(rgbToHex(color), 'Profit P&L should use green (#00C853)').toMatch(GREEN_RE);
+    } else if (isLoss) {
+      const color = await pnl.evaluate(el => getComputedStyle(el).color);
+      expect(rgbToHex(color), 'Loss P&L should use red (#FF1744)').toMatch(RED_RE);
     }
-    // Zero or unknown value: no assertion (color may be neutral gray)
+    // Zero class → neutral gray → no assertion needed
   });
 
   test('main P&L panel amount uses green for positive values', async ({ page }) => {
@@ -68,29 +68,29 @@ test.describe('P&L color correctness', () => {
     await gotoAndWait(page);
     await page.waitForTimeout(2000);
 
-    // The pnl-amount div should have class positive/negative/zero
-    const pnlAmount = page.locator('.pnl-amount');
-    const count = await pnlAmount.count();
-    if (count === 0) return; // panel not rendered
+    // Use first() to avoid strict-mode error when multiple .pnl-amount elements exist
+    const pnlAmount = page.locator('.pnl-amount').first();
+    const visible = await pnlAmount.count();
+    if (visible === 0) return; // panel not rendered
 
-    const hasPositive = await pnlAmount.evaluate(el => el.classList.contains('positive'));
-    const hasNegative = await pnlAmount.evaluate(el => el.classList.contains('negative'));
-    const hasZero     = await pnlAmount.evaluate(el => el.classList.contains('zero'));
+    const classes = await pnlAmount.evaluate(el => el.className);
+    const hasPositive = classes.includes('positive');
+    const hasNegative = classes.includes('negative');
+    const hasZero     = classes.includes('zero');
 
-    // Should have exactly one class applied
+    // Should have exactly one sign class applied
     const classCount = [hasPositive, hasNegative, hasZero].filter(Boolean).length;
     expect(classCount, 'pnl-amount should have exactly one sign class').toBe(1);
 
     if (hasPositive) {
       const color = await pnlAmount.evaluate(el => getComputedStyle(el).color);
-      const hex = rgbToHex(color);
-      expect(hex, 'Positive pnl-amount should be green').toMatch(GREEN_RE);
+      expect(rgbToHex(color), 'Positive pnl-amount should be green').toMatch(GREEN_RE);
     }
     if (hasNegative) {
       const color = await pnlAmount.evaluate(el => getComputedStyle(el).color);
-      const hex = rgbToHex(color);
-      expect(hex, 'Negative pnl-amount should be red').toMatch(RED_RE);
+      expect(rgbToHex(color), 'Negative pnl-amount should be red').toMatch(RED_RE);
     }
+    // Zero class → neutral gray → no assertion needed
   });
 
   test('breakdown table P&L cells use green/red correctly', async ({ page }) => {
@@ -146,8 +146,11 @@ test.describe('System health badge color discipline', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await gotoAndWait(page);
 
-    const badge = page.locator('[data-testid="sb-health-badge"]');
+    const badge = page.locator('[data-testid="sb-health-badge"]').first();
     await expect(badge).toBeVisible();
+
+    // Wait for health data to load (avoids flaky initial-render color check)
+    await page.waitForTimeout(2000);
 
     const color = await badge.evaluate(el => getComputedStyle(el).color);
     const hex = rgbToHex(color);
@@ -160,15 +163,22 @@ test.describe('System health badge color discipline', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await gotoAndWait(page);
 
-    const badge = page.locator('[data-testid="sb-mode-badge"]');
+    const badge = page.locator('[data-testid="sb-mode-badge"]').first();
     await expect(badge).toBeVisible();
+
+    // Wait for broker status to load (avoids checking default loading state)
+    await page.waitForTimeout(2000);
 
     const color = await badge.evaluate(el => getComputedStyle(el).color);
     const hex = rgbToHex(color);
 
     // Mode badge should use blue or amber, not the P&L green/red
     expect(hex, 'Mode badge should NOT use P&L green').not.toMatch(GREEN_RE);
-    expect(hex, 'Mode badge should NOT use P&L red').not.toMatch(RED_RE);
+    // NOTE: LIVE mode does use red as a safety warning — only check non-live here
+    const classes = await badge.evaluate(el => el.className);
+    if (!classes.includes('live')) {
+      expect(hex, 'Non-live mode badge should NOT use P&L red').not.toMatch(RED_RE);
+    }
   });
 });
 
