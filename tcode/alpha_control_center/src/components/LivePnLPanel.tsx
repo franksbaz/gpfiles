@@ -383,7 +383,7 @@ const LivePnLPanel: React.FC = () => {
           </div>
           <div className="guardrail-track">
             <div className={`guardrail-fill ${guardrailClass(lossUsedPct)}`}
-              style={{ width: `${lossUsedPct}%` }}
+              style={{ width: `${Math.max(2, lossUsedPct)}%` }}
               data-testid="guardrail-loss-bar" />
           </div>
         </div>

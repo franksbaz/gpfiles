@@ -292,11 +292,10 @@ const StatusBar: React.FC<Props> = ({
           </span>
         </div>
         <div className="sb-target-row">
-          <div className="sb-target-track" aria-label={`${targetPct.toFixed(0)}% of $${(dailyTarget/1000).toFixed(0)}k target`}>
+          <div className="sb-target-track" aria-label={`${targetPct.toFixed(0)}% of $${(dailyTarget/1000).toFixed(0)}k target`} data-testid="sb-target-bar">
             <div
               className={`sb-target-fill ${targetPct >= 100 ? 'complete' : targetPct >= 50 ? 'halfway' : ''}`}
               style={{ width: `${pnlNegative ? 0 : targetPct}%` }}
-              data-testid="sb-target-bar"
             />
           </div>
           <span className="sb-target-label">

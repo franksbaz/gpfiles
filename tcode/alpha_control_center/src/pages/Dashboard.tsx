@@ -1674,7 +1674,8 @@ const BrokerStatusPill = ({ brokerStatus }: { brokerStatus: BrokerStatus | null 
 const DataProvenancePanel = ({ audit }: { audit: DataAudit | null }) => {
     if (!audit) return null;
     const sv = audit.spot_validation;
-    const chainAgeSec = audit.chain_age_sec;
+    if (!sv) return null;
+    const chainAgeSec = audit.chain_age_sec ?? 0;
     const chainStale = chainAgeSec > 300;
 
     // Compute age of spot validation timestamp
@@ -1725,7 +1726,7 @@ const DataProvenancePanel = ({ audit }: { audit: DataAudit | null }) => {
 
             {/* Divergence */}
             <div className={`prov-divergence ${divClass}`}>
-                Δ {sv.divergence_pct.toFixed(3)}%
+                Δ {(sv.divergence_pct ?? 0).toFixed(3)}%
             </div>
 
             <div className="prov-panel-sep" />
